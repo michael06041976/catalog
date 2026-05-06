@@ -1,0 +1,59 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Product item in the catalog",
+      "type": "object",
+      "properties": {
+        "internalId": { "type": "string" },
+        "sku": { "type": "string" },
+        "desc": { "type": "string" },
+        "supplier": { "type": "string" },
+        "category": { "type": "string" },
+        "img": { "type": "string" },
+        "created": { "type": "string" },
+        "updatedAt": { "type": "integer" }
+      },
+      "required": ["internalId", "sku", "desc"]
+    },
+    "Company": {
+      "title": "Company",
+      "description": "Global settings for the company catalog",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "addr": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "web": { "type": "string" },
+        "logo": { "type": "string" },
+        "updatedAt": { "type": "integer" }
+      }
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile with role",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "editor", "viewer"] },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["email", "role"]
+    }
+  },
+  "firestore": {
+    "products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Products in the central catalog"
+    },
+    "settings/{settingId}": {
+      "schema": { "$ref": "#/entities/Company" },
+      "description": "Company settings (e.g. settings/company)"
+    },
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles managing RBAC"
+    }
+  }
+}

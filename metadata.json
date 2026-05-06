@@ -1,0 +1,6 @@
+{
+  "name": "CatalogPro",
+  "description": "מערכת ניהול קטלוג מוצרים עם יכולות ייצוא ל-Excel, PDF, וגיבוי מקומי מלא.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

@@ -1,0 +1,100 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Basic defaults
+    match /{document=**} {
+      allow read, write: if false; // Catch-all deny
+    }
+
+    // Primitives
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function isSignedIn() { return request.auth != null; }
+    
+    // Auth & Roles
+    function getUserRole() {
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return userDoc != null ? userDoc.data.role : null;
+    }
+    
+    function isAdmin() {
+      // Allow the provided email to be bootstrapped as admin if no doc exists yet
+      return isSignedIn() && (getUserRole() == 'admin' || request.auth.token.email == 'm.allouche@gmail.com' || request.auth.token.email == 'mike.allouche@outlook.com');
+    }
+    
+    function isEditorOrAdmin() {
+      let role = getUserRole();
+      return isSignedIn() && (role == 'admin' || role == 'editor' || isAdmin());
+    }
+
+    // Schema Validation Helpers
+    function isValidProduct(data) {
+      return data.keys().hasAll(['internalId', 'sku', 'desc'])
+          && data.internalId is string && data.internalId.size() <= 100
+          && data.sku is string && data.sku.size() <= 100
+          && data.desc is string && data.desc.size() <= 5000
+          && data.get('supplier', '') is string && data.get('supplier', '').size() <= 200
+          && data.get('category', '') is string && data.get('category', '').size() <= 200
+          && (data.get('price', 0) is number || data.get('price', '') is string)
+          && (data.get('stock', 0) is number || data.get('stock', '') is string)
+          && (data.get('prices', {}) is map)
+          && data.get('img', '') is string && data.get('img', '').size() <= 2000000
+          && data.get('created', '') is string && data.get('created', '').size() <= 100
+          && data.get('updatedAt', request.time) == request.time;
+    }
+
+    function isValidCompany(data) {
+      return data.get('name', '') is string && data.get('name', '').size() <= 200
+          && data.get('hp', '') is string && data.get('hp', '').size() <= 50
+          && data.get('addr', '') is string && data.get('addr', '').size() <= 500
+          && data.get('phone', '') is string && data.get('phone', '').size() <= 50
+          && data.get('email', '') is string && data.get('email', '').size() <= 200
+          && data.get('web', '') is string && data.get('web', '').size() <= 200
+          && data.get('logo', '') is string && data.get('logo', '').size() <= 2000000
+          && data.get('updatedAt', request.time) == request.time;
+    }
+    
+    function isValidPriceLists(data) {
+        return (data.get('lists', []) is list);
+    }
+    
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'role', 'createdAt'])
+          && data.email is string && data.email.size() <= 200
+          && data.role in ['admin', 'editor', 'viewer']
+          && (data.get('status', 'approved') in ['pending', 'approved', 'inactive'])
+          && data.createdAt is timestamp
+          && (data.get('menus', []) is list)
+          && data.get('menus', []).size() <= 10
+          && (data.get('phone', '') is string) && data.get('phone', '').size() <= 50
+          && (data.get('company', '') is string) && data.get('company', '').size() <= 200;
+    }
+
+    // Paths
+    match /products/{productId} {
+      allow list: if isSignedIn(); // All authenticated users can read products
+      allow get: if isSignedIn() && isValidId(productId);
+      allow create: if isEditorOrAdmin() && isValidId(productId) && isValidProduct(incoming()) && incoming().keys().size() <= 11;
+      allow update: if isEditorOrAdmin() && isValidId(productId) && isValidProduct(incoming()) && incoming().keys().size() <= 11;
+      allow delete: if isEditorOrAdmin() && isValidId(productId);
+    }
+
+    match /settings/{settingId} {
+      allow read: if isSignedIn();
+      allow create, update: if isAdmin() && isValidId(settingId) && (
+        (settingId == 'company' && isValidCompany(incoming())) ||
+        (settingId == 'pricelists' && isValidPriceLists(incoming()))
+      );
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin() || (resource != null && resource.data.email == request.auth.token.email));
+      allow list: if isAdmin();
+      allow create: if (isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidUser(incoming()) && incoming().keys().size() <= 8) ||
+                       (isAdmin() && isValidId(userId) && isValidUser(incoming()) && incoming().keys().size() <= 8);
+      allow update: if isAdmin() && isValidId(userId) && isValidUser(incoming()) && incoming().keys().size() <= 8;
+      allow delete: if (isAdmin() && isValidId(userId)) || (isSignedIn() && resource != null && resource.data.email == request.auth.token.email);
+    }
+  }
+}
