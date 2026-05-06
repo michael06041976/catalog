@@ -2,9 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { db, auth } from './firebase';
-import { Shield, UserPlus, Trash2, ShieldAlert, Building, Edit, Key, X, Check, Database } from 'lucide-react';
-import { migrateImagesFromBase64ToStorage } from './migration';
-import { generateMissingEmbeddingsClientSide } from './migration-embeddings';
+import { Shield, UserPlus, Trash2, ShieldAlert, Building, Edit, Key, X, Check } from 'lucide-react';
 
 interface AdminProps {
   onNavigateToCompany: () => void;
@@ -132,62 +130,9 @@ export default function Admin({ onNavigateToCompany }: AdminProps) {
      }
   };
 
-  const handleMigration = async () => {
-    try {
-      const count = await migrateImagesFromBase64ToStorage();
-      alert(`Migration completed! Migrated ${count} images from base64 to Storage.`);
-    } catch(err: any) {
-      alert(`Migration error: ${err.message}`);
-    }
-  };
-
-  const [isGeneratingEmbeddings, setIsGeneratingEmbeddings] = useState(false);
-  const handleEmbeddingGeneration = async () => {
-    try {
-      setIsGeneratingEmbeddings(true);
-      const count = await generateMissingEmbeddingsClientSide();
-      alert(`Migration (Cold Start) terminée ! ${count} produits ont reçu un nouvel embedding Gemini.`);
-    } catch(err: any) {
-      alert(`Erreur génération embedding: ${err.message}`);
-    } finally {
-      setIsGeneratingEmbeddings(false);
-    }
-  };
-
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-
-      <div className="bg-yellow-50 rounded-xl shadow-sm border border-yellow-200 p-6 flex items-center justify-between flex-wrap gap-4 mt-4">
-         <div>
-            <h3 className="text-lg font-bold text-yellow-800 mb-1 flex items-center gap-2">
-              <Database size={20} className="text-yellow-600" /> המרת תמונות (Base64 ל-Storage)
-            </h3>
-            <p className="text-xs text-yellow-700">פעולה חד-פעמית להמרת תמונות קיימות ל-Firebase Storage. לאחר לחיצה, התהליך עלול לקחת כמה דקות.</p>
-         </div>
-         <button 
-           onClick={handleMigration}
-           className="px-4 py-2 bg-yellow-600 text-white rounded-md font-medium text-sm hover:bg-yellow-700 transition-colors shadow-sm"
-         >
-           בצע המרה
-         </button>
-      </div>
-
-      <div className="bg-blue-50 rounded-xl shadow-sm border border-blue-200 p-6 flex items-center justify-between flex-wrap gap-4 mt-4">
-         <div>
-            <h3 className="text-lg font-bold text-blue-800 mb-1 flex items-center gap-2">
-              <Database size={20} className="text-blue-600" /> יצירת Embeddings (Cold Start)
-            </h3>
-            <p className="text-xs text-blue-700">פעולה מלאכותית (AI) שמייצרת וקטורים עבור חיפוש סמנטי לכלל המוצרים שחסרים להם חישובים.</p>
-         </div>
-         <button 
-           onClick={handleEmbeddingGeneration}
-           disabled={isGeneratingEmbeddings}
-           className="px-4 py-2 bg-blue-600 text-white rounded-md font-medium text-sm hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-         >
-           {isGeneratingEmbeddings ? 'מייצר...' : 'בצע יצירת Embeddings'}
-         </button>
-      </div>
-
+      
       <div className="bg-gradient-to-l from-indigo-50 to-white rounded-xl shadow-sm border border-indigo-100 p-6 flex items-center justify-between flex-wrap gap-4">
          <div>
             <h3 className="text-lg font-bold text-slate-800 mb-1 flex items-center gap-2">

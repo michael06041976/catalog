@@ -3,16 +3,13 @@ import {
   LayoutGrid, Plus, Building2, Save, Download, FileSpreadsheet,
   FileText, Search, FileEdit, ImagePlus, X, Upload, Pencil, Trash2,
   PackageSearch, Check, DatabaseBackup, UploadCloud, FileUp, Shield,
-  PlayCircle, Loader2, CloudCog, CloudLightning, Menu, List, ArrowDownWideNarrow, ArrowUpNarrowWide, Sparkles
+  PlayCircle, Loader2, CloudCog, CloudLightning, Menu, List, ArrowDownWideNarrow, ArrowUpNarrowWide
 } from 'lucide-react';
-import { Routes, Route, Navigate, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import { collection, doc, onSnapshot, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { db, auth, uploadProductImage } from './firebase';
+import { db, auth } from './firebase';
 import Admin from './Admin';
-import { useGeminiProduct } from './useGeminiProduct';
-import { useSemanticSearch, cosineSimilarity } from './useSemanticSearch';
 
 interface Product {
   id: string; // Changed to string for Firestore
@@ -27,7 +24,6 @@ interface Product {
   img: string | null;
   created: string;
   updatedAt?: any;
-  embedding?: number[];
 }
 
 interface Company {
@@ -51,32 +47,10 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
   const [products, setProducts] = useState<Product[]>([]);
   const [company, setCompany] = useState<Company>({ name: '', hp: '', addr: '', phone: '', email: '', web: '', logo: null });
   const [priceLists, setPriceLists] = useState<PriceListDef[]>([]);
-  
-  const navigate = useNavigate();
-  const location = useLocation();
+  const [activeTab, setActiveTab] = useState<'catalog' | 'add' | 'company' | 'admin' | 'pricelists'>('catalog');
 
   // ... rest of the state
   const [search, setSearch] = useState('');
-  const [searchMode, setSearchMode] = useState<'classic' | 'ai'>('classic');
-  const [searchQueryEmbedding, setSearchQueryEmbedding] = useState<number[] | null>(null);
-  const { getEmbedding, isSearchingSemantic } = useSemanticSearch();
-
-  useEffect(() => {
-    if (searchMode !== 'ai') {
-      setSearchQueryEmbedding(null);
-      return;
-    }
-    const timer = setTimeout(async () => {
-      if (search.trim()) {
-        const emb = await getEmbedding(search);
-        setSearchQueryEmbedding(emb);
-      } else {
-        setSearchQueryEmbedding(null);
-      }
-    }, 800);
-    return () => clearTimeout(timer);
-  }, [search, searchMode, getEmbedding]);
-
   const [categoryFilter, setCategoryFilter] = useState('');
   const [supplierFilter, setSupplierFilter] = useState('');
   const [dateStartFilter, setDateStartFilter] = useState('');
@@ -127,27 +101,6 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
   const [cEmail, setCEmail] = useState('');
   const [cWeb, setCWeb] = useState('');
   const [cLogo, setCLogo] = useState<string | null>(null);
-
-  const [aiGeneratedFields, setAiGeneratedFields] = useState<Record<string, boolean>>({});
-  const { analyzeImage, isAnalyzing, error: aiError } = useGeminiProduct(fImg);
-
-  const handleGenerateAI = async () => {
-    if (!fImg || !fImg.startsWith('data:')) {
-      showToast('אנא העלה תמונה חדשה תחילה');
-      return;
-    }
-    const result = await analyzeImage();
-    if (result) {
-      setAiGeneratedFields({ sku: !!result.sku, desc: !!result.desc, category: !!result.category, supplier: !!result.supplier });
-      if (result.sku) setFSku(result.sku);
-      if (result.desc) setFDesc(result.desc);
-      if (result.category) setFCategory(result.category);
-      if (result.supplier) setFSup(result.supplier);
-      showToast('✓ הנתונים מולאו בהצלחה בעזרת בינה מלאכותית');
-    } else {
-      showToast('⚠️ הפעולה נכשלה, נסה שוב או נסה תמונה אחרת');
-    }
-  };
 
   const isAdmin = userRole === 'admin';
   const isEditor = isAdmin || userRole === 'editor';
@@ -292,14 +245,23 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
     return canvas.toDataURL('image/jpeg', 0.8);
   };
 
-  const handleInlineImageUpload = async (id: string, file: File) => {
+  const handleInlineImageUpload = (id: string, file: File) => {
     if (!isEditor) return;
     if (file.size > 5 * 1024 * 1024) { showToast('⚠️ התמונה גדולה מ-5MB'); return; }
-    try {
-      const url = await uploadProductImage(file, id);
-      await setDoc(doc(db, 'products', id), { img: url, updatedAt: serverTimestamp() }, { merge: true });
-      showToast('✓ התמונה עודכנה בהצלחה');
-    } catch (err) { handleFirestoreError(err); }
+    const r = new FileReader();
+    r.onload = async (e) => {
+      const res = e.target?.result as string;
+      const img = new Image();
+      img.onload = async () => {
+        const result = getResizedDataUrl(img);
+        try {
+          await setDoc(doc(db, 'products', id), { img: result, updatedAt: serverTimestamp() }, { merge: true });
+          showToast('✓ התמונה עודכנה בהצלחה');
+        } catch (err) { handleFirestoreError(err); }
+      };
+      img.src = res;
+    };
+    r.readAsDataURL(file);
   };
 
   const saveProduct = async () => {
@@ -315,18 +277,8 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
 
     setIsUploading(true);
     let finalImgUrl = fImg || '';
+
     const docId = editId || Date.now().toString() + Math.floor(Math.random()*1000);
-
-    try {
-      if (fImgFile) {
-        finalImgUrl = await uploadProductImage(fImgFile, docId);
-      }
-    } catch (err) {
-      handleFirestoreError(err);
-      setIsUploading(false);
-      return;
-    }
-
     const data = {
       internalId: fId.substring(0, 100),
       sku: fSku.substring(0, 100),
@@ -345,7 +297,7 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
       await setDoc(doc(db, 'products', docId), data);
       showToast(editId ? '✓ הפריט עודכן בהצלחה' : '✓ הפריט נוסף לקטלוג');
       cancelEdit();
-      navigate('/catalog');
+      setActiveTab('catalog');
     } catch (err) {
       handleFirestoreError(err);
     } finally {
@@ -365,7 +317,6 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
     setFStock('');
     setFPrices({});
     setFImgFile(null);
-    setAiGeneratedFields({});
   };
 
   const startEdit = (id: string) => {
@@ -383,8 +334,7 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
     setFStock(p.stock || '');
     setFPrices(p.prices || {});
     setFImgFile(null);
-    setAiGeneratedFields({});
-    navigate('/add');
+    setActiveTab('add');
   };
 
   const delProduct = async (id: string) => {
@@ -413,22 +363,7 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
   };
 
   const filteredProducts = products.filter(p => {
-    let matchesSearch = true;
-    (p as any)._sim = 0; // reset similarity
-
-    if (searchMode === 'classic') {
-      matchesSearch = (p.desc + p.internalId + p.sku + (p.supplier || '')).toLowerCase().includes(search.toLowerCase());
-    } else {
-      if (searchQueryEmbedding && p.embedding) {
-        const sim = cosineSimilarity(searchQueryEmbedding, p.embedding);
-        (p as any)._sim = sim;
-        matchesSearch = sim > 0.4; // Threshold to filter completely irrelevant
-      } else if (search.trim()) {
-        // Fallback or cold start if no embedding on product
-        matchesSearch = (p.desc + p.internalId + p.sku + (p.supplier || '')).toLowerCase().includes(search.toLowerCase());
-      }
-    }
-
+    const matchesSearch = (p.desc + p.internalId + p.sku + (p.supplier || '')).toLowerCase().includes(search.toLowerCase());
     const matchesCategory = categoryFilter === '' || p.category === categoryFilter;
     const matchesSupplier = supplierFilter === '' || p.supplier === supplierFilter;
     
@@ -454,9 +389,7 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
 
   const sortedProducts = React.useMemo(() => {
     let sortableProducts = [...filteredProducts];
-    if (searchMode === 'ai' && searchQueryEmbedding) {
-      sortableProducts.sort((a, b) => ((b as any)._sim || 0) - ((a as any)._sim || 0));
-    } else if (sortConfig !== null) {
+    if (sortConfig !== null) {
       sortableProducts.sort((a, b) => {
         let aVal = a[sortConfig.key];
         let bVal = b[sortConfig.key];
@@ -479,7 +412,7 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
       });
     }
     return sortableProducts;
-  }, [filteredProducts, sortConfig, searchMode, searchQueryEmbedding]);
+  }, [filteredProducts, sortConfig]);
 
   const requestSort = (key: keyof Product) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -1049,45 +982,44 @@ ${printHtml}
             </div>
           )}
           {canSeeTab('catalog') && (
-          <NavLink
-            to="/catalog"
-            className={({ isActive }) => `px-2 md:px-3 py-1.5 rounded-md text-xs md:text-sm font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${isActive ? 'bg-rose-500 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+          <button
+            onClick={() => setActiveTab('catalog')}
+            className={`px-2 md:px-3 py-1.5 rounded-md text-xs md:text-sm font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${activeTab === 'catalog' ? 'bg-rose-500 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
           >
             <LayoutGrid size={16} /> קטלוג
-          </NavLink>
+          </button>
           )}
           {canSeeTab('add') && (
-            <NavLink
-              to="/add"
-              onClick={() => cancelEdit()}
-              className={({ isActive }) => `px-2 md:px-3 py-1.5 rounded-md text-xs md:text-sm font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${isActive ? 'bg-rose-500 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+            <button
+              onClick={() => { setActiveTab('add'); cancelEdit(); }}
+              className={`px-2 md:px-3 py-1.5 rounded-md text-xs md:text-sm font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${activeTab === 'add' ? 'bg-rose-500 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <Plus size={16} /> <span className="hidden sm:inline">הוסף / ערוך</span>
-            </NavLink>
+            </button>
           )}
           {canSeeTab('company') && (
-            <NavLink
-              to="/company"
-              className={({ isActive }) => `px-2 md:px-3 py-1.5 rounded-md text-xs md:text-sm font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${isActive ? 'bg-rose-500 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+            <button
+              onClick={() => setActiveTab('company')}
+              className={`px-2 md:px-3 py-1.5 rounded-md text-xs md:text-sm font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${activeTab === 'company' ? 'bg-rose-500 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <Building2 size={16} /> <span className="hidden sm:inline"> חברה</span>
-            </NavLink>
+            </button>
           )}
           {canSeeTab('pricelists') && (
-            <NavLink
-              to="/pricelists"
-              className={({ isActive }) => `px-2 md:px-3 py-1.5 rounded-md text-xs md:text-sm font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${isActive ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+            <button
+              onClick={() => setActiveTab('pricelists')}
+              className={`px-2 md:px-3 py-1.5 rounded-md text-xs md:text-sm font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${activeTab === 'pricelists' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
             >
               <List size={16} /> <span className="hidden sm:inline">מחירונים</span>
-            </NavLink>
+            </button>
           )}
           {canSeeTab('admin') && (
-            <NavLink
-              to="/admin"
-              className={({ isActive }) => `px-2 md:px-3 py-1.5 rounded-md text-xs md:text-sm font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${isActive ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-indigo-50 hover:text-indigo-600'}`}
+            <button
+              onClick={() => setActiveTab('admin')}
+              className={`px-2 md:px-3 py-1.5 rounded-md text-xs md:text-sm font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${activeTab === 'admin' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-indigo-50 hover:text-indigo-600'}`}
             >
               <Shield size={16} /> <span className="hidden sm:inline">ניהול</span>
-            </NavLink>
+            </button>
           )}
         </div>
       </header>
@@ -1209,21 +1141,14 @@ ${printHtml}
             </div>
 
             <div className="relative">
-              <Search size={16} className={`absolute right-3 top-1/2 -translate-y-1/2 ${isSearchingSemantic ? 'text-indigo-400 animate-pulse' : 'text-slate-400'}`} />
+              <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder={searchMode === 'ai' ? 'חיפוש סמנטי (RAG)...' : 'חיפוש רגיל (תיאור, מק"ט, ספק...)'}
-                className={`w-full py-2 pr-9 pl-3 bg-slate-50 border rounded-md text-[13px] outline-none transition-all font-medium placeholder:font-normal ${searchMode === 'ai' ? 'border-indigo-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 placeholder:text-indigo-300 text-indigo-900 bg-indigo-50/30' : 'border-slate-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100'}`}
+                placeholder='חיפוש (תיאור, מק"ט, ספק...)'
+                className="w-full py-2 pr-9 pl-3 bg-slate-50 border border-slate-200 rounded-md text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all font-medium placeholder:font-normal"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
-              <button
-                onClick={() => setSearchMode(prev => prev === 'classic' ? 'ai' : 'classic')}
-                className={`absolute left-2 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${searchMode === 'ai' ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'}`}
-                title="החלף בין חיפוש רגיל לחיפוש עם בינה מלאכותית"
-              >
-                {searchMode === 'ai' ? '✨ IA' : 'רגיל'}
-              </button>
             </div>
           </div>
 
@@ -1280,9 +1205,8 @@ ${printHtml}
         {/* Content Area */}
         <main className={`flex-1 p-4 md:p-6 overflow-y-auto bg-slate-100 relative ${mobileMenuOpen ? 'opacity-50 pointer-events-none md:opacity-100 md:pointer-events-auto' : ''}`}>
           
-          <Routes>
           {/* CATALOG TAB */}
-          <Route path="/catalog" element={canSeeTab('catalog') ? (
+          {activeTab === 'catalog' && canSeeTab('catalog') && (
             <div className={sortedProducts.length > 0 && catalogView === 'grid' ? "grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4 items-start" : (sortedProducts.length > 0 && catalogView === 'list' ? "overflow-x-auto bg-white rounded-xl shadow-sm border border-slate-200" : "h-full flex items-center justify-center")}>
               {sortedProducts.length === 0 ? (
                 <div className="text-center p-12 text-slate-400 flex flex-col items-center w-full">
@@ -1441,10 +1365,10 @@ ${printHtml}
                 </table>
               )}
             </div>
-          ) : <Navigate to="/catalog" replace />} />
+          )}
 
           {/* ADD / EDIT TAB */}
-          <Route path="/add" element={canSeeTab('add') ? (
+          {activeTab === 'add' && canSeeTab('add') && (
             <div className="max-w-[540px] mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-6">
               {editId !== null && (
                 <div className="bg-amber-50 border border-amber-300 text-amber-800 px-4 py-3 rounded-lg mb-5 flex items-center gap-2 text-[13px] font-medium">
@@ -1452,58 +1376,32 @@ ${printHtml}
                 </div>
               )}
               
-              <div className="flex items-center gap-2 mb-5">
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2 flex-1">
-                  <FileEdit size={16} /> פרטי הפריט
-                </div>
-                {fImg && fImg.startsWith('data:') && (
-                  <button 
-                    onClick={handleGenerateAI}
-                    disabled={isAnalyzing}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-md text-[13px] font-bold transition-colors disabled:opacity-50"
-                  >
-                    {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                    {isAnalyzing ? 'מנתח...' : "✨ Générer avec l'IA"}
-                  </button>
-                )}
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2 mb-5">
+                <FileEdit size={16} /> פרטי הפריט
               </div>
 
               <div className="space-y-4">
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-2">
-                    מק"ט פנימי (Internal ID) *
-                  </label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">מק"ט פנימי (Internal ID) *</label>
                   <input type="text" value={fId} onChange={e => setFId(e.target.value)} placeholder="לדוגמה: PRD-001" className="w-full px-3 py-2 border border-slate-200 rounded-md bg-slate-50 text-[14px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all font-medium" />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-2">
-                    מק"ט כללי (SKU) *
-                    {aiGeneratedFields.sku && <span className="bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1"><Sparkles size={10} /> IA</span>}
-                  </label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">מק"ט כללי (SKU) *</label>
                   <input type="text" value={fSku} onChange={e => setFSku(e.target.value)} placeholder="לדוגמה: SKU-12345" className="w-full px-3 py-2 border border-slate-200 rounded-md bg-slate-50 text-[14px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all font-medium" />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-2">
-                    תיאור מוצר *
-                    {aiGeneratedFields.desc && <span className="bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1"><Sparkles size={10} /> IA</span>}
-                  </label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">תיאור מוצר *</label>
                   <textarea value={fDesc} onChange={e => setFDesc(e.target.value)} placeholder="תיאור מפורט של המוצר..." className="w-full px-3 py-2 border border-slate-200 rounded-md bg-slate-50 text-[14px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all font-medium min-h-[80px] resize-y"></textarea>
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-2">
-                    קטגוריה
-                    {aiGeneratedFields.category && <span className="bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1"><Sparkles size={10} /> IA</span>}
-                  </label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">קטגוריה</label>
                   <input type="text" list="category-options" value={fCategory} onChange={e => setFCategory(e.target.value)} placeholder="בחר קטגוריה או הזן חדשה..." className="w-full px-3 py-2 border border-slate-200 rounded-md bg-slate-50 text-[14px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all font-medium" />
                   <datalist id="category-options">
                     {uniqueCategories.map(c => <option key={c} value={c} />)}
                   </datalist>
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center gap-2">
-                    ספק
-                    {aiGeneratedFields.supplier && <span className="bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1"><Sparkles size={10} /> IA</span>}
-                  </label>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">ספק</label>
                   <input type="text" value={fSup} onChange={e => setFSup(e.target.value)} placeholder="שם הספק" className="w-full px-3 py-2 border border-slate-200 rounded-md bg-slate-50 text-[14px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all font-medium" />
                 </div>
                 <div>
@@ -1554,10 +1452,10 @@ ${printHtml}
                 </div>
               </div>
             </div>
-          ) : <Navigate to="/catalog" replace />} />
+          )}
 
           {/* COMPANY TAB (Admin Only / if canSeeTab) */}
-          <Route path="/company" element={canSeeTab('company') ? (
+          {activeTab === 'company' && canSeeTab('company') && (
             <div className="max-w-[540px] mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-6">
               <div className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2 mb-5">
                 <Building2 size={16} /> פרטי החברה
@@ -1615,10 +1513,10 @@ ${printHtml}
                 </div>
               </div>
             </div>
-          ) : <Navigate to="/catalog" replace />} />
+          )}
 
           {/* PRICE LISTS */}
-          <Route path="/pricelists" element={canSeeTab('pricelists') ? (
+          {activeTab === 'pricelists' && canSeeTab('pricelists') && (
             <div className="max-w-3xl mx-auto space-y-6">
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
@@ -1722,16 +1620,12 @@ ${printHtml}
                 </div>
               </div>
             </div>
-          ) : <Navigate to="/catalog" replace />} />
+          )}
 
           {/* SYSTEM SETTINGS / ADMIN */}
-          <Route path="/admin" element={canSeeTab('admin') ? (
-            <Admin onNavigateToCompany={() => navigate('/company')} />
-          ) : <Navigate to="/catalog" replace />} />
-          
-          <Route path="/" element={<Navigate to="/catalog" replace />} />
-          <Route path="*" element={<Navigate to="/catalog" replace />} />
-          </Routes>
+          {activeTab === 'admin' && canSeeTab('admin') && (
+            <Admin onNavigateToCompany={() => setActiveTab('company')} />
+          )}
           
         </main>
       </div>
