@@ -82,6 +82,8 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
   const [plImportHeaders, setPlImportHeaders] = useState<string[]>([]);
   const [plFieldMapping, setPlFieldMapping] = useState<Record<string, string>>({});
   const [importingPl, setImportingPl] = useState<PriceListDef | null>(null);
+  
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   // Form State
   const [fId, setFId] = useState('');
@@ -1156,23 +1158,12 @@ ${printHtml}
             <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 mb-2">
               <Download size={14} /> ייצוא והפקה
             </div>
-            <button onClick={() => exportExcel(products)} className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 px-3 rounded-md text-[13px] font-semibold transition-colors">
-              <FileSpreadsheet size={16} /> Excel הכל
+            <button onClick={() => exportExcel(sortedProducts)} className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 px-3 rounded-md text-[13px] font-semibold transition-colors">
+              <FileSpreadsheet size={16} /> Excel תצוגה נוכחית ({sortedProducts.length})
             </button>
-            <button onClick={() => exportPDF(products)} className="w-full flex items-center justify-center gap-2 bg-indigo-700 hover:bg-indigo-800 text-white py-1.5 px-3 rounded-md text-[13px] font-semibold transition-colors">
-              <FileText size={16} /> PDF הכל
+            <button onClick={() => exportPDF(sortedProducts)} className="w-full flex items-center justify-center gap-2 bg-indigo-700 hover:bg-indigo-800 text-white py-1.5 px-3 rounded-md text-[13px] font-semibold transition-colors">
+              <FileText size={16} /> PDF תצוגה נוכחית ({sortedProducts.length})
             </button>
-            {isFiltering && (
-              <div className="pt-2 border-t border-slate-200 mt-2 flex flex-col gap-2">
-                <div className="text-[10px] text-center text-slate-500 font-bold mb-0.5">תוצאות סינון ({filteredProducts.length})</div>
-                <button onClick={() => exportExcel(filteredProducts)} className="w-full flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white py-1.5 px-3 rounded-md text-[13px] font-semibold transition-colors">
-                  <FileSpreadsheet size={16} /> Excel מסונן
-                </button>
-                <button onClick={() => exportPDF(filteredProducts)} className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-1.5 px-3 rounded-md text-[13px] font-semibold transition-colors">
-                  <FileText size={16} /> PDF מסונן
-                </button>
-              </div>
-            )}
           </div>
 
           {isAdmin && (
@@ -1217,9 +1208,9 @@ ${printHtml}
               ) : catalogView === 'grid' ? (
                 sortedProducts.map(p => (
                   <div key={p.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden hover:shadow-lg transition-transform hover:-translate-y-0.5 duration-200 group">
-                    <div className="w-full h-40 bg-slate-100 flex items-center justify-center overflow-hidden relative">
+                    <div className="w-full h-40 bg-white border-b border-slate-100 flex flex-col items-center justify-center overflow-hidden relative p-3">
                       {p.img ? (
-                         <img src={p.img} alt="" className="w-full h-full object-cover" />
+                         <img src={p.img} alt="" className="w-full h-full object-contain cursor-pointer transition-transform duration-300 drop-shadow-[0_4px_8px_rgba(0,0,0,0.06)] hover:scale-[1.03]" onClick={() => setPreviewImage(p.img!)} />
                       ) : (
                          <ImagePlus size={36} className="text-slate-300 opacity-60" />
                       )}
@@ -1325,10 +1316,10 @@ ${printHtml}
                     {sortedProducts.map(p => (
                       <tr key={p.id} className="hover:bg-slate-50 transition-colors group">
                         <td className="px-4 py-2">
-                          <div className="w-10 h-10 bg-slate-100 rounded-md overflow-hidden flex items-center justify-center shrink-0 border border-slate-200 mx-auto relative group/img">
-                            {p.img ? <img src={p.img} alt="" className="w-full h-full object-cover" /> : <ImagePlus size={16} className="text-slate-300" />}
+                          <div className="w-10 h-10 bg-slate-50 rounded-md overflow-hidden flex items-center justify-center shrink-0 border border-slate-200 mx-auto relative group/img p-0.5">
+                            {p.img ? <img src={p.img} alt="" className="w-full h-full object-contain cursor-pointer hover:scale-110 transition-transform drop-shadow-sm" onClick={() => setPreviewImage(p.img!)} /> : <ImagePlus size={16} className="text-slate-300" />}
                             {isEditor && (
-                              <label className="absolute inset-0 bg-black/50 text-white flex items-center justify-center opacity-0 group-hover/img:opacity-100 cursor-pointer transition-opacity">
+                              <label className="absolute inset-0 bg-black/50 text-white flex items-center justify-center opacity-0 group-hover/img:opacity-100 cursor-pointer transition-opacity z-10">
                                 <ImagePlus size={16} />
                                 <input type="file" accept="image/*" className="hidden" onChange={(e) => { if(e.target.files?.[0]) handleInlineImageUpload(p.id, e.target.files[0]); }} />
                               </label>
@@ -1761,8 +1752,26 @@ ${printHtml}
         </div>
       )}
 
+      {/* Image Preview Modal */}
+      {previewImage && (
+        <div 
+          className="fixed inset-0 bg-slate-900/80 z-[100] p-4 flex justify-center items-center backdrop-blur-sm transition-opacity" 
+          onClick={() => setPreviewImage(null)}
+        >
+          <div className="relative max-w-5xl w-full max-h-[90vh] flex justify-center items-center group">
+             <button 
+                onClick={() => setPreviewImage(null)}
+                className="absolute top-4 right-4 bg-black/50 text-white rounded-full p-2 hover:bg-black/80 transition-colors shadow-lg opacity-80 group-hover:opacity-100 z-10"
+             >
+                <X size={24} />
+             </button>
+             <img src={previewImage} alt="Preview" className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" onClick={e => e.stopPropagation()} />
+          </div>
+        </div>
+      )}
+
       {/* Global Toast Notification */}
-      <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-3 rounded-lg shadow-xl text-[13px] font-medium flex items-center gap-2 z-[100] transition-all duration-300 pointer-events-none transform ${toastMessage ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+      <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-5 py-3 rounded-lg shadow-xl text-[13px] font-medium flex items-center gap-2 z-[110] transition-all duration-300 pointer-events-none transform ${toastMessage ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
         {toastMessage}
       </div>
     </div>
