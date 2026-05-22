@@ -558,8 +558,8 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
     const cNameStr = company.name || 'קטלוג מוצרים';
     const cInfo = [company.hp ? 'ח.פ: ' + company.hp : '', company.addr, company.phone, company.email, company.web].filter(Boolean).join(' | ');
 
-    // Chunk into pages (8 items = 4 rows of 2)
-    const ITEMS_PER_PAGE = 8;
+    // Chunk into pages (14 items = 7 rows of 2)
+    const ITEMS_PER_PAGE = 14;
     const pages = [];
     for (let i = 0; i < itemsToExport.length; i += ITEMS_PER_PAGE) {
       pages.push(itemsToExport.slice(i, i + ITEMS_PER_PAGE));
@@ -644,15 +644,15 @@ body{font-family:Arial,'David',Tahoma,sans-serif;direction:rtl;color:#1a1a2e;bac
 .footer{position:absolute;bottom:12mm;left:15mm;right:15mm;display:flex;justify-content:flex-end;align-items:center;padding-top:10px;}
 .page-num{font-weight:bold;color:#1a1a2e;font-size:12px;}
 .grid{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;align-content:flex-start;}
-.prod-card{width:calc(50% - 6px);border:1px solid #d1d5db;border-radius:8px;padding:12px;display:flex;gap:16px;background:#fafafa;height:220px;overflow:hidden;}
-.prod-img{width:194px;height:194px;flex-shrink:0;border-radius:6px;overflow:hidden;background:#fff;display:flex;align-items:center;justify-content:center;border:1px solid #e5e7eb;padding:4px}
+.prod-card{width:calc(50% - 6px);border:1px solid #d1d5db;border-radius:8px;padding:8px;display:flex;gap:10px;background:#fafafa;height:113px;overflow:hidden;}
+.prod-img{width:95px;height:95px;flex-shrink:0;border-radius:6px;overflow:hidden;background:#e5e7eb;display:flex;align-items:center;justify-content:center}
 .prod-img img{width:100%;height:100%;object-fit:contain;background:#fff}
 .no-img{font-size:10px;color:#9ca3af;text-align:center;padding:8px}
 .prod-info{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;}
-.prod-name{font-weight:700;font-size:15px;color:#111827;margin-bottom:8px;line-height:1.2;max-height:36px;overflow:hidden;}
-.info-table{width:100%;font-size:12px;border-collapse:collapse}
-.info-table td{padding:2px 0;vertical-align:top}
-.info-table .lbl{color:#6b7280;font-weight:700;white-space:nowrap;width:80px}
+.prod-name{font-weight:700;font-size:13px;color:#111827;margin-bottom:5px;line-height:1.2;max-height:30px;overflow:hidden;}
+.info-table{width:100%;font-size:11px;border-collapse:collapse}
+.info-table td{padding:1px 0;vertical-align:top}
+.info-table .lbl{color:#6b7280;font-weight:700;white-space:nowrap;width:70px}
 .print-btn{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:11px 26px;background:#1a1a2e;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer;font-family:inherit;box-shadow:0 4px 16px rgba(0,0,0,.2);z-index:999;}
 @media print{
   body{background:#fff;}
@@ -1205,7 +1205,7 @@ ${printHtml}
           
           {/* CATALOG TAB */}
           {activeTab === 'catalog' && canSeeTab('catalog') && (
-            <div className={sortedProducts.length > 0 && catalogView === 'grid' ? "grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4 items-start" : (sortedProducts.length > 0 && catalogView === 'list' ? "overflow-x-auto bg-white rounded-xl shadow-sm border border-slate-200" : "h-full flex items-center justify-center")}>
+            <div className={sortedProducts.length > 0 && catalogView === 'grid' ? "grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4 items-start" : (sortedProducts.length > 0 && catalogView === 'list' ? "overflow-x-auto bg-white rounded-xl shadow-sm border border-slate-200" : "h-full flex items-center justify-center")}>
               {sortedProducts.length === 0 ? (
                 <div className="text-center p-12 text-slate-400 flex flex-col items-center w-full">
                   <PackageSearch size={48} className="mb-4 opacity-50 stroke-[1.5]" />
@@ -1215,7 +1215,7 @@ ${printHtml}
               ) : catalogView === 'grid' ? (
                 sortedProducts.map(p => (
                   <div key={p.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden hover:shadow-lg transition-transform hover:-translate-y-0.5 duration-200 group">
-                    <div className="w-full h-64 bg-white border-b border-slate-100 flex flex-col items-center justify-center overflow-hidden relative p-4">
+                    <div className="w-full h-40 bg-white border-b border-slate-100 flex flex-col items-center justify-center overflow-hidden relative p-3">
                       {p.img ? (
                          <img src={p.img} alt="" className="w-full h-full object-contain cursor-pointer transition-transform duration-300 drop-shadow-[0_4px_8px_rgba(0,0,0,0.06)] hover:scale-[1.03]" onClick={() => setPreviewImage(p.img!)} />
                       ) : (
@@ -1323,7 +1323,7 @@ ${printHtml}
                     {sortedProducts.map(p => (
                       <tr key={p.id} className="hover:bg-slate-50 transition-colors group">
                         <td className="px-4 py-2">
-                          <div className="w-16 h-16 bg-slate-50 rounded-md overflow-hidden flex items-center justify-center shrink-0 border border-slate-200 mx-auto relative group/img p-0.5">
+                          <div className="w-10 h-10 bg-slate-50 rounded-md overflow-hidden flex items-center justify-center shrink-0 border border-slate-200 mx-auto relative group/img p-0.5">
                             {p.img ? <img src={p.img} alt="" className="w-full h-full object-contain cursor-pointer hover:scale-110 transition-transform drop-shadow-sm" onClick={() => setPreviewImage(p.img!)} /> : <ImagePlus size={16} className="text-slate-300" />}
                             {isEditor && (
                               <label className="absolute inset-0 bg-black/50 text-white flex items-center justify-center opacity-0 group-hover/img:opacity-100 cursor-pointer transition-opacity z-10">
