@@ -176,9 +176,7 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const onImgPick = (e: React.ChangeEvent<HTMLInputElement>, setter: (val: string) => void, setFile?: (f: File | null) => void) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const processImageFile = (file: File, setter: (val: string) => void, setFile?: (f: File | null) => void) => {
     if (file.size > 5000000) { showToast('⚠️ הקובץ גדול מדי (עד 5MB)'); return; }
     
     if (setFile) {
@@ -221,6 +219,28 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
       img.src = result;
     };
     r.readAsDataURL(file);
+  };
+
+  const onImgPick = (e: React.ChangeEvent<HTMLInputElement>, setter: (val: string) => void, setFile?: (f: File | null) => void) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    processImageFile(file, setter, setFile);
+  };
+  
+  const handleImageDrop = (e: React.DragEvent<HTMLDivElement>, setter: (val: string) => void, setFile?: (f: File | null) => void) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      processImageFile(file, setter, setFile);
+    } else {
+      if (file) showToast('⚠️ נא לגרור קובץ תמונה בלבד');
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
   };
 
   const getResizedDataUrl = (img: HTMLImageElement): string => {
@@ -1447,7 +1467,11 @@ ${printHtml}
                 
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">תמונת מוצר (עד 5MB)</label>
-                  <div className="relative border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/50 rounded-lg p-6 text-center transition-colors cursor-pointer group bg-slate-50">
+                  <div 
+                    className="relative border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/50 rounded-lg p-6 text-center transition-colors cursor-pointer group bg-slate-50"
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleImageDrop(e, setFImg, setFImgFile)}
+                  >
                     <input type="file" accept="image/*" onChange={(e) => onImgPick(e, setFImg, setFImgFile)} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
                     
                     {fImg ? (
@@ -1490,7 +1514,11 @@ ${printHtml}
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">לוגו חברה</label>
                   <div className="flex items-center gap-4">
-                    <div className="relative w-20 h-20 rounded-lg bg-slate-50 border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden hover:border-indigo-400 transition-colors cursor-pointer group">
+                    <div 
+                      className="relative w-20 h-20 rounded-lg bg-slate-50 border-2 border-dashed border-slate-200 flex items-center justify-center overflow-hidden hover:border-indigo-400 transition-colors cursor-pointer group"
+                      onDragOver={handleDragOver}
+                      onDrop={(e) => handleImageDrop(e, setCLogo)}
+                    >
                       <input type="file" accept="image/*" onChange={(e) => onImgPick(e, setCLogo)} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
                       {cLogo ? (
                         <img src={cLogo} alt="Logo" className="w-full h-full object-contain bg-white" />
