@@ -70,6 +70,7 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
   
   const [catalogView, setCatalogView] = useState<'grid' | 'list'>('grid');
   const [displayPriceId, setDisplayPriceId] = useState<string>('none');
+  const [showStock, setShowStock] = useState(true);
   const [sortConfig, setSortConfig] = useState<{ key: keyof Product; direction: 'asc' | 'desc' } | null>(null);
 
   // Excel Import State
@@ -625,7 +626,7 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
             <tr><td class="lbl">מק"ט תע"א</td><td>${p.sku}</td></tr>
             ${p.category ? `<tr><td class="lbl">קטגוריה</td><td>${p.category}</td></tr>` : ''}
             ${p.supplier ? `<tr><td class="lbl">ספק</td><td>${p.supplier}</td></tr>` : ''}
-            <tr><td class="lbl">מלאי</td><td>${p.stock || '0'}</td></tr>
+            ${showStock ? `<tr><td class="lbl">מלאי</td><td>${p.stock || '0'}</td></tr>` : ''}
             ${dispPriceStr(p)}
           </table>
         </div>
@@ -1009,6 +1010,15 @@ ${printHtml}
         <div className="flex gap-1 overflow-x-auto hide-scrollbars items-center w-full md:w-auto mt-2 md:mt-0 justify-start md:justify-end">
           {canSeeTab('catalog') && (
             <div className="flex gap-1.5 items-center mr-2 md:mr-3 border-r border-slate-200 pr-2 md:pr-3">
+              <label className="flex items-center gap-1.5 text-xs text-slate-600 font-medium cursor-pointer ml-1 select-none whitespace-nowrap bg-slate-50 border border-slate-200 px-2 py-1.5 rounded-md hover:bg-slate-100 transition-colors">
+                <input 
+                  type="checkbox" 
+                  checked={showStock} 
+                  onChange={e => setShowStock(e.target.checked)} 
+                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white"
+                />
+                מלאי
+              </label>
               <select
                 value={displayPriceId}
                 onChange={e => setDisplayPriceId(e.target.value)}
@@ -1319,10 +1329,12 @@ ${printHtml}
                           <div className="text-[13px] text-slate-700 font-medium break-words">{p.price || '—'} ₪</div>
                         </div>
                       )}
-                      <div className="flex items-start px-3 py-2 border-b border-slate-50 gap-2">
-                        <div className="text-[10.5px] font-bold text-slate-500 min-w-[70px] uppercase tracking-wide shrink-0 pt-0.5">מלאי</div>
-                        <div className="text-[13px] text-slate-700 font-medium break-words">{p.stock || '0'} יח'</div>
-                      </div>
+                      {showStock && (
+                        <div className="flex items-start px-3 py-2 border-b border-slate-50 gap-2">
+                          <div className="text-[10.5px] font-bold text-slate-500 min-w-[70px] uppercase tracking-wide shrink-0 pt-0.5">מלאי</div>
+                          <div className="text-[13px] text-slate-700 font-medium break-words">{p.stock || '0'} יח'</div>
+                        </div>
+                      )}
                       {priceLists.filter(pl => displayPriceId === 'all' || displayPriceId === pl.id).map(pl => (
                         <div key={pl.id} className="flex items-start px-3 py-2 border-b border-slate-50 gap-2">
                           <div className="text-[10.5px] font-bold text-slate-500 min-w-[70px] uppercase tracking-wide shrink-0 pt-0.5">{pl.name}</div>
@@ -1357,9 +1369,11 @@ ${printHtml}
                           <div className="flex items-center gap-1">מחיר {sortConfig?.key === 'price' && (sortConfig.direction === 'asc' ? <ArrowUpNarrowWide size={14} className="text-indigo-500" /> : <ArrowDownWideNarrow size={14} className="text-indigo-500" />)}</div>
                         </th>
                       )}
-                      <th className="px-4 py-3 font-semibold cursor-pointer hover:bg-slate-100 transition-colors group" onClick={() => requestSort('stock')}>
-                        <div className="flex items-center gap-1">מלאי {sortConfig?.key === 'stock' && (sortConfig.direction === 'asc' ? <ArrowUpNarrowWide size={14} className="text-indigo-500" /> : <ArrowDownWideNarrow size={14} className="text-indigo-500" />)}</div>
-                      </th>
+                      {showStock && (
+                        <th className="px-4 py-3 font-semibold cursor-pointer hover:bg-slate-100 transition-colors group" onClick={() => requestSort('stock')}>
+                          <div className="flex items-center gap-1">מלאי {sortConfig?.key === 'stock' && (sortConfig.direction === 'asc' ? <ArrowUpNarrowWide size={14} className="text-indigo-500" /> : <ArrowDownWideNarrow size={14} className="text-indigo-500" />)}</div>
+                        </th>
+                      )}
                       {priceLists.filter(pl => displayPriceId === 'all' || displayPriceId === pl.id).map(pl => (
                         <th key={pl.id} className="px-4 py-3 font-semibold">{pl.name}</th>
                       ))}
@@ -1388,7 +1402,9 @@ ${printHtml}
                         {((displayPriceId === 'all' && isAdmin) || displayPriceId === 'cost') && (
                           <td className="px-4 py-3 font-semibold text-slate-700">{p.price || '—'} ₪</td>
                         )}
-                        <td className="px-4 py-3 font-semibold text-slate-700">{p.stock || '0'}</td>
+                        {showStock && (
+                          <td className="px-4 py-3 font-semibold text-slate-700">{p.stock || '0'}</td>
+                        )}
                         {priceLists.filter(pl => displayPriceId === 'all' || displayPriceId === pl.id).map(pl => (
                            <td key={pl.id} className="px-4 py-3 text-slate-600">{(p.prices && p.prices[pl.id]) || '—'} ₪</td>
                         ))}
