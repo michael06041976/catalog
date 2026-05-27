@@ -66,6 +66,7 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
   const [editingPriceListId, setEditingPriceListId] = useState<string | null>(null);
   const [editingPriceListName, setEditingPriceListName] = useState('');
   const [priceListToDelete, setPriceListToDelete] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   
   const [catalogView, setCatalogView] = useState<'grid' | 'list'>('grid');
   const [displayPriceId, setDisplayPriceId] = useState<string>('none');
@@ -268,7 +269,7 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
 
   const saveProduct = async () => {
     if (!fId || !fSku || !fDesc) {
-      showToast('⚠️ מלא: מק"ט פנימי, מק"ט כללי ותיאור');
+      showToast('⚠️ מלא: מק"ט פנימי, מק"ט תע"א ותיאור');
       return;
     }
     
@@ -339,15 +340,19 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
     setActiveTab('add');
   };
 
-  const delProduct = async (id: string) => {
+  const promptDeleteProduct = (id: string) => {
     if (!isEditor) { showToast('⚠️ אין לך הרשאת מחיקה'); return; }
-    if (window.confirm("האם אתה בטוח שברצונך למחוק פריט זה?")) {
-      try {
-        await deleteDoc(doc(db, 'products', id));
-        showToast('🗑 הפריט נמחק');
-      } catch (err) {
-         handleFirestoreError(err);
-      }
+    setDeleteConfirmId(id);
+  };
+
+  const confirmDeleteProduct = async () => {
+    if (!deleteConfirmId) return;
+    try {
+      await deleteDoc(doc(db, 'products', deleteConfirmId));
+      showToast('🗑 הפריט נמחק');
+      setDeleteConfirmId(null);
+    } catch (err) {
+       handleFirestoreError(err);
     }
   };
 
@@ -462,7 +467,7 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
 
       // Calculate heights and widths
       worksheet.getColumn(1).width = 15; // מק"ט פנימי
-      worksheet.getColumn(2).width = 15; // SKU
+      worksheet.getColumn(2).width = 15; // מק"ט תע"א
       worksheet.getColumn(3).width = 15; // קטגוריה
       worksheet.getColumn(4).width = 40; // תיאור
       worksheet.getColumn(5).width = 15; // ספק
@@ -497,7 +502,7 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
       // Headers
       const plHeaders = priceLists.map(pl => pl.name);
       
-      const headerRow = worksheet.addRow(['מק"ט פנימי', 'מק"ט כללי (SKU)', 'קטגוריה', 'תיאור מוצר', 'ספק', 'תאריך קליטה', 'מחיר עלות', 'מלאי', ...plHeaders, 'תמונה']);
+      const headerRow = worksheet.addRow(['מק"ט פנימי', 'מק"ט תע"א', 'קטגוריה', 'תיאור מוצר', 'ספק', 'תאריך קליטה', 'מחיר עלות', 'מלאי', ...plHeaders, 'תמונה']);
       headerRow.eachCell((cell) => {
         cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF16A34A' } };
@@ -597,7 +602,7 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
           <div class="prod-name">${p.desc}</div>
           <table class="info-table">
             <tr><td class="lbl">מק"ט פנימי</td><td>${p.internalId}</td></tr>
-            <tr><td class="lbl">מק"ט כללי</td><td>${p.sku}</td></tr>
+            <tr><td class="lbl">מק"ט תע"א</td><td>${p.sku}</td></tr>
             ${p.category ? `<tr><td class="lbl">קטגוריה</td><td>${p.category}</td></tr>` : ''}
             ${p.supplier ? `<tr><td class="lbl">ספק</td><td>${p.supplier}</td></tr>` : ''}
             <tr><td class="lbl">מלאי</td><td>${p.stock || '0'}</td></tr>
@@ -677,7 +682,7 @@ ${printHtml}
 
   // --- JSON Backup / Restore ---
   const handleExportBackup = () => {
-    const data = { products, company };
+    const data = { products, company, priceLists };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -694,22 +699,41 @@ ${printHtml}
       try {
         const data = JSON.parse(ev.target?.result as string);
         if (data.products && Array.isArray(data.products)) {
-            for (const p of data.products) {
-              const cleaned: any = {
-                internalId: p.internalId || '',
-                sku: p.sku || '',
-                desc: p.desc || '',
-                supplier: p.supplier || '',
-                category: p.category || '',
-                price: p.price ?? '',
-                stock: p.stock ?? '',
-                prices: p.prices || {},
-                img: p.img || '',
-                created: p.created || new Date().toLocaleDateString('he-IL'),
-                updatedAt: serverTimestamp()
-              };
-              await setDoc(doc(db, 'products', p.id || Date.now().toString() + Math.random().toString()), cleaned);
-           }
+            let processed = 0;
+            const CHUNK_SIZE = 50;
+            while (processed < data.products.length) {
+              const chunk = data.products.slice(processed, processed + CHUNK_SIZE);
+              
+              await Promise.all(chunk.map(async (p: any) => {
+                  const cleanPrices: Record<string, any> = {};
+                  if (p.prices) {
+                    Object.keys(p.prices).forEach(k => {
+                      if (p.prices[k] !== undefined) cleanPrices[k] = p.prices[k];
+                    });
+                  }
+                  
+                  const cleaned: any = {
+                    internalId: typeof p.internalId === 'string' || typeof p.internalId === 'number' ? String(p.internalId) : '',
+                    sku: typeof p.sku === 'string' || typeof p.sku === 'number' ? String(p.sku) : '',
+                    desc: typeof p.desc === 'string' ? p.desc : (p.desc ? String(p.desc) : ''),
+                    supplier: typeof p.supplier === 'string' ? p.supplier : '',
+                    category: typeof p.category === 'string' ? p.category : '',
+                    price: p.price ?? '',
+                    stock: p.stock ?? '',
+                    prices: cleanPrices,
+                    img: typeof p.img === 'string' ? p.img : '',
+                    created: typeof p.created === 'string' ? p.created : new Date().toLocaleDateString('he-IL'),
+                    updatedAt: serverTimestamp()
+                  };
+                  
+                  try {
+                    await setDoc(doc(db, 'products', p.id ? String(p.id) : (Date.now().toString() + Math.random().toString())), cleaned);
+                  } catch (e) {
+                    console.error("שגיאה בשחזור פריט", p.id, e);
+                  }
+              }));
+              processed += CHUNK_SIZE;
+            }
         }
         if (data.company) {
            const comp = data.company;
@@ -723,6 +747,9 @@ ${printHtml}
              updatedAt: serverTimestamp()
            }
            await setDoc(doc(db, 'settings', 'company'), cleanCompany);
+        }
+        if (data.priceLists && Array.isArray(data.priceLists)) {
+           await savePriceLists(data.priceLists);
         }
         showToast('✓ שחזור גיבוי בוצע בהצלחה, מרענן נתונים במחזור הבא של Firestore.');
       } catch (err) {
@@ -779,7 +806,7 @@ ${printHtml}
 
   const executePlImport = async () => {
     if (!plFieldMapping.internalId && !plFieldMapping.sku) {
-      showToast('⚠️ חובה לשייך לפחות שדה מזהה אחד (מק"ט כללי או מק"ט פנימי)');
+      showToast('⚠️ חובה לשייך לפחות שדה מזהה אחד (מק"ט תע"א או מק"ט פנימי)');
       return;
     }
     if (!plFieldMapping.price) {
@@ -886,7 +913,7 @@ ${printHtml}
 
   const executeImport = async () => {
     if (!fieldMapping.internalId && !fieldMapping.sku) {
-      showToast('⚠️ חובה לשייך לפחות שדה מזהה אחד (מק"ט כללי או מק"ט פנימי)');
+      showToast('⚠️ חובה לשייך לפחות שדה מזהה אחד (מק"ט תע"א או מק"ט פנימי)');
       return;
     }
 
@@ -1144,8 +1171,8 @@ ${printHtml}
                  <option value="created_asc">תאריך יצירה (מהישן לחדש)</option>
                  <option value="desc_asc">תיאור (א-ת)</option>
                  <option value="desc_desc">תיאור (ת-א)</option>
-                 <option value="sku_asc">מק"ט כללי (עולה)</option>
-                 <option value="sku_desc">מק"ט כללי (יורד)</option>
+                 <option value="sku_asc">מק"ט תע"א (עולה)</option>
+                 <option value="sku_desc">מק"ט תע"א (יורד)</option>
                </select>
             </div>
 
@@ -1231,7 +1258,7 @@ ${printHtml}
                           <button onClick={() => startEdit(p.id)} className="w-8 h-8 rounded-md bg-white/95 text-indigo-600 hover:text-indigo-800 hover:bg-white shadow-sm flex items-center justify-center transition-colors">
                             <Pencil size={15} />
                           </button>
-                          <button onClick={() => delProduct(p.id)} className="w-8 h-8 rounded-md bg-white/95 text-red-600 hover:text-red-800 hover:bg-white shadow-sm flex items-center justify-center transition-colors">
+                          <button onClick={() => promptDeleteProduct(p.id)} className="w-8 h-8 rounded-md bg-white/95 text-red-600 hover:text-red-800 hover:bg-white shadow-sm flex items-center justify-center transition-colors">
                             <Trash2 size={15} />
                           </button>
                         </div>
@@ -1239,8 +1266,8 @@ ${printHtml}
                     </div>
                     
                     <div className="bg-gradient-to-br from-slate-900 to-indigo-950 px-3 py-2 flex items-center justify-between text-[11px] text-indigo-200 font-medium">
-                       <span>מק"ט: <span className="text-white">{p.internalId}</span></span>
-                       <span>SKU: <span className="text-white">{p.sku}</span></span>
+                       <span>מק"ט פנימי: <span className="text-white">{p.internalId}</span></span>
+                       <span>מק"ט תע"א: <span className="text-white">{p.sku}</span></span>
                     </div>
                     
                     <div className="p-0">
@@ -1253,7 +1280,7 @@ ${printHtml}
                         <div className="text-[13px] text-slate-700 font-medium break-all">{p.internalId}</div>
                       </div>
                       <div className="flex items-start px-3 py-2 border-b border-slate-50 gap-2">
-                        <div className="text-[10.5px] font-bold text-slate-500 min-w-[70px] uppercase tracking-wide shrink-0 pt-0.5">כללי SKU</div>
+                        <div className="text-[10.5px] font-bold text-slate-500 min-w-[70px] uppercase tracking-wide shrink-0 pt-0.5">מק"ט תע"א</div>
                         <div className="text-[13px] text-slate-700 font-medium break-all">{p.sku}</div>
                       </div>
                       {p.category && (
@@ -1294,7 +1321,7 @@ ${printHtml}
                         <div className="flex items-center gap-1">מק"ט פנימי {sortConfig?.key === 'internalId' && (sortConfig.direction === 'asc' ? <ArrowUpNarrowWide size={14} className="text-indigo-500" /> : <ArrowDownWideNarrow size={14} className="text-indigo-500" />)}</div>
                       </th>
                       <th className="px-4 py-3 font-semibold cursor-pointer hover:bg-slate-100 transition-colors group" onClick={() => requestSort('sku')}>
-                        <div className="flex items-center gap-1">SKU {sortConfig?.key === 'sku' && (sortConfig.direction === 'asc' ? <ArrowUpNarrowWide size={14} className="text-indigo-500" /> : <ArrowDownWideNarrow size={14} className="text-indigo-500" />)}</div>
+                        <div className="flex items-center gap-1">מק"ט תע"א {sortConfig?.key === 'sku' && (sortConfig.direction === 'asc' ? <ArrowUpNarrowWide size={14} className="text-indigo-500" /> : <ArrowDownWideNarrow size={14} className="text-indigo-500" />)}</div>
                       </th>
                       <th className="px-4 py-3 font-semibold cursor-pointer hover:bg-slate-100 transition-colors group" onClick={() => requestSort('desc')}>
                         <div className="flex items-center gap-1">תיאור {sortConfig?.key === 'desc' && (sortConfig.direction === 'asc' ? <ArrowUpNarrowWide size={14} className="text-indigo-500" /> : <ArrowDownWideNarrow size={14} className="text-indigo-500" />)}</div>
@@ -1351,7 +1378,7 @@ ${printHtml}
                               <button onClick={() => startEdit(p.id)} className="w-8 h-8 rounded-md bg-white text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 border border-slate-200 flex items-center justify-center transition-colors shadow-sm">
                                 <Pencil size={14} />
                               </button>
-                              <button onClick={() => delProduct(p.id)} className="w-8 h-8 rounded-md bg-white text-red-600 hover:text-red-800 hover:bg-red-50 border border-slate-200 flex items-center justify-center transition-colors shadow-sm">
+                              <button onClick={() => promptDeleteProduct(p.id)} className="w-8 h-8 rounded-md bg-white text-red-600 hover:text-red-800 hover:bg-red-50 border border-slate-200 flex items-center justify-center transition-colors shadow-sm">
                                 <Trash2 size={14} />
                               </button>
                             </div>
@@ -1384,8 +1411,8 @@ ${printHtml}
                   <input type="text" value={fId} onChange={e => setFId(e.target.value)} placeholder="לדוגמה: PRD-001" className="w-full px-3 py-2 border border-slate-200 rounded-md bg-slate-50 text-[14px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all font-medium" />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">מק"ט כללי (SKU) *</label>
-                  <input type="text" value={fSku} onChange={e => setFSku(e.target.value)} placeholder="לדוגמה: SKU-12345" className="w-full px-3 py-2 border border-slate-200 rounded-md bg-slate-50 text-[14px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all font-medium" />
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">מק"ט תע"א *</label>
+                  <input type="text" value={fSku} onChange={e => setFSku(e.target.value)} placeholder="לדוגמה: 123456" className="w-full px-3 py-2 border border-slate-200 rounded-md bg-slate-50 text-[14px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all font-medium" />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">תיאור מוצר *</label>
@@ -1653,7 +1680,7 @@ ${printHtml}
             <div className="space-y-4 mb-6 relative">
               {[
                 { key: 'internalId', label: 'מק"ט פנימי', required: false },
-                { key: 'sku', label: 'מק"ט כללי (SKU)', required: false },
+                { key: 'sku', label: 'מק"ט תע"א', required: false },
                 { key: 'desc', label: 'תיאור מוצר (חובה למוצר חדש)', required: false },
                 { key: 'supplier', label: 'ספק', required: false },
                 { key: 'category', label: 'קטגוריה', required: false },
@@ -1782,6 +1809,39 @@ ${printHtml}
                 <X size={24} />
              </button>
              <img src={previewImage} alt="Preview" className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl" onClick={e => e.stopPropagation()} />
+          </div>
+        </div>
+      )}
+
+      {/* Delete Product Confirmation Modal */}
+      {deleteConfirmId && (
+        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-[200] p-4 transition-opacity">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 mb-4 text-red-600">
+              <div className="bg-red-100 p-2 rounded-full">
+                <Trash2 size={24} />
+              </div>
+              <h3 className="text-xl font-bold">מחיקת מוצר</h3>
+            </div>
+            <p className="text-slate-600 mb-6 font-medium">
+              האם אתה בטוח שברצונך למחוק מוצר זה?
+              <br />
+              <span className="text-sm text-slate-500 font-normal">פעולה זו אינה הפיכה!</span>
+            </p>
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => setDeleteConfirmId(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-md transition-colors"
+               >
+                ביטול
+              </button>
+              <button 
+                onClick={confirmDeleteProduct}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-md transition-colors shadow-sm"
+              >
+                מחק פריט
+              </button>
+            </div>
           </div>
         </div>
       )}
