@@ -1002,7 +1002,7 @@ ${printHtml}
           <button className="md:hidden p-1 mr-[-8px] text-slate-500 hover:bg-slate-100 rounded-md" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
              <Menu size={20} />
           </button>
-          <span className="text-rose-500">◈</span> CatalogPro
+          <span className="text-rose-500">◈</span> Michael.A CatalogPro
         </div>
         
         <div className="hidden md:flex items-center gap-3 text-xs ml-auto pl-4 border-l border-slate-100">
