@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from './firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { updatePassword } from 'firebase/auth';
+import { updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import Auth from './Auth';
 import MainApp from './MainApp';
 import { LogOut, Key } from 'lucide-react';
@@ -13,6 +13,7 @@ export default function App() {
   const [menus, setMenus] = useState<string[] | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [showPasswordChange, setShowPasswordChange] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [passError, setPassError] = useState('');
 
@@ -109,14 +110,34 @@ export default function App() {
      e.preventDefault();
      if (!user) return;
      try {
+       const isPasswordProvider = user.providerData.some(p => p.providerId === 'password');
+       if (!isPasswordProvider) {
+         setPassError('חשבון זה מחובר באמצעות ספק חיצוני (כגון Google) ואין לו סיסמא לשנות במערכת זו.');
+         return;
+       }
+       
+       if (!currentPassword) {
+         setPassError('יש להזין סיסמא נוכחית.');
+         return;
+       }
+
+       if (user.email) {
+          const cred = EmailAuthProvider.credential(user.email, currentPassword);
+          await reauthenticateWithCredential(user, cred);
+       }
+
        await updatePassword(user, newPassword);
        alert('הסיסמא שונתה בהצלחה');
        setShowPasswordChange(false);
+       setCurrentPassword('');
        setNewPassword('');
+       setPassError('');
      } catch (err: any) {
        console.error(err);
-       if (err.code === 'auth/requires-recent-login') {
-          setPassError('יש להתנתק ולהתחבר מחדש כדי לשנות סיסמא (אבטחת Firebase)');
+       if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+          setPassError('הסיסמא הנוכחית שגויה.');
+       } else if (err.code === 'auth/requires-recent-login') {
+          setPassError('יש להתנתק ולהתחבר מחדש כדי לשנות סיסמא.');
        } else if (err.code === 'auth/weak-password') {
           setPassError('סיסמא חלשה. לפחות 6 תווים.');
        } else {
@@ -177,6 +198,18 @@ export default function App() {
             <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 relative">
                <h3 className="text-lg font-bold mb-4">שינוי סיסמא</h3>
                <form onSubmit={handleChangePassword} className="space-y-4">
+                 {user?.providerData.some(p => p.providerId === 'password') && (
+                   <div>
+                     <label className="block text-sm mb-1 text-slate-700">סיסמא נוכחית</label>
+                     <input 
+                       type="password" 
+                       required 
+                       value={currentPassword}
+                       onChange={e => setCurrentPassword(e.target.value)}
+                       className="w-full border border-slate-200 rounded-md px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                     />
+                   </div>
+                 )}
                  <div>
                    <label className="block text-sm mb-1 text-slate-700">סיסמא חדשה</label>
                    <input 

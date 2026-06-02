@@ -391,7 +391,11 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
   };
 
   const filteredProducts = products.filter(p => {
-    const matchesSearch = (p.desc + p.internalId + p.sku + (p.supplier || '')).toLowerCase().includes(search.toLowerCase());
+    const term = search.toLowerCase().trim();
+    const searchWords = term.split(/\s+/).filter(Boolean);
+    const textToSearch = [p.desc, p.internalId, p.sku, p.supplier].map(v => String(v || '')).join(' ').toLowerCase();
+    const matchesSearch = searchWords.length === 0 || searchWords.every(word => textToSearch.includes(word));
+    
     const matchesCategory = categoryFilter === '' || p.category === categoryFilter;
     const matchesSupplier = supplierFilter === '' || p.supplier === supplierFilter;
     

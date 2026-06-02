@@ -76,9 +76,13 @@ export default function Admin({ onNavigateToCompany }: AdminProps) {
   const handleResetPassword = async (email: string) => {
     try {
       await sendPasswordResetEmail(auth, email);
-      alert(`נשלח קישור לאיפוס סיסמא לכתובת: ${email}`);
+      alert(`מטעמי אבטחה של גוגל, לא ניתן להגדיר סיסמא ידנית עבור משתמשים אחרים.\n\nנשלח בהצלחה קישור לאיפוס סיסמא לכתובת: ${email}\nהמשתמש יוכל להגדיר סיסמא חדשה דרך הקישור במייל.`);
     } catch (err: any) {
-      alert("שגיאה בשליחת קישור איפוס: " + err.message);
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-email') {
+         alert(`שגיאה: המשתמש עדיין לא ביצע הרשמה ראשונית למערכת עם המייל ${email}, ולכן לא ניתן לשלוח לו איפוס סיסמא.`);
+      } else {
+         alert("שגיאה בשליחת קישור איפוס: " + err.message);
+      }
     }
   };
 

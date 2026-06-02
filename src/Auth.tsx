@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useSignInWithGoogle, useSignInWithEmailAndPassword, useCreateUserWithEmailAndPassword } from 'react-firebase-hooks/auth';
 import { setDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { sendPasswordResetEmail } from 'firebase/auth';
 import { auth, db } from './firebase';
 
 export default function Auth() {
@@ -12,6 +13,7 @@ export default function Auth() {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('viewer');
   const [isRegistering, setIsRegistering] = useState(false);
+  const [resetMessage, setResetMessage] = useState('');
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,6 +34,23 @@ export default function Auth() {
       }
     } else {
       signInWithEmailAndPassword(email, password);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setResetMessage('נא להזין אימייל לשחזור סיסמא');
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setResetMessage('נשלח קישור לאיפוס סיסמא למייל שלך');
+    } catch (err: any) {
+      if (err.code === 'auth/user-not-found') {
+        setResetMessage('משתמש זה אינו רשום במערכת');
+      } else {
+        setResetMessage('שגיאה בשליחת קישור לאיפוס');
+      }
     }
   };
 
@@ -68,8 +87,6 @@ export default function Auth() {
             dir="ltr"
           />
           
-          {/* Role selection removed, defaults to viewer */}
-
           <button 
             type="submit"
             className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-md transition-colors"
@@ -78,6 +95,22 @@ export default function Auth() {
             {loading ? 'טוען...' : (isRegistering ? 'צור חשבון חדש' : 'התחבר עם אימייל')}
           </button>
         </form>
+
+        {!isRegistering && (
+          <div className="mb-6 text-sm">
+            <button 
+              type="button" 
+              onClick={handleForgotPassword}
+              className="text-indigo-600 hover:text-indigo-800 transition-colors"
+            >
+              שכחתי סיסמא
+            </button>
+          </div>
+        )}
+
+        {resetMessage && (
+           <p className="text-emerald-600 text-sm mb-4 bg-emerald-50 p-2 rounded-md">{resetMessage}</p>
+        )}
 
         <div className="text-sm text-slate-500 flex items-center justify-center gap-2 mb-6">
           <span className="w-full h-px bg-slate-200"></span>
@@ -97,7 +130,7 @@ export default function Auth() {
         <div className="mt-6 text-sm text-slate-600">
           {isRegistering ? 'יש לך כבר חשבון? ' : 'אין לך חשבון? '}
           <button 
-            onClick={() => setIsRegistering(!isRegistering)}
+            onClick={() => { setIsRegistering(!isRegistering); setResetMessage(''); }}
             className="text-indigo-600 hover:text-indigo-800 font-medium"
             type="button"
           >
