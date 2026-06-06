@@ -377,6 +377,57 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
     }
   };
 
+  const handleRemoveDuplicates = async () => {
+    if (!isAdmin) { showToast('⚠️ פעולה זו מורשית למנהלים בלבד'); return; }
+    
+    const seen = new Set<string>();
+    const toDelete: string[] = [];
+
+    // Sort products so we keep the latest updated one if duplicates exist
+    // Or just iterate as is (they are ordered by firestore default, usually insertion)
+    for (const p of products) {
+      const sku = (p.sku || '').trim().toLowerCase();
+      const internalId = (p.internalId || '').trim().toLowerCase();
+      const desc = (p.desc || '').trim().toLowerCase();
+      
+      let key = '';
+      if (sku) key = `sku_${sku}`;
+      else if (internalId) key = `int_${internalId}`;
+      else if (desc) key = `desc_${desc}`;
+      
+      if (!key) continue;
+      
+      if (seen.has(key)) {
+        toDelete.push(p.id);
+      } else {
+        seen.add(key);
+      }
+    }
+
+    if (toDelete.length === 0) {
+      alert('לא נמצאו כפילויות במערכת.');
+      return;
+    }
+
+    if (!window.confirm(`נמצאו ${toDelete.length} פריטים כפולים (בעלי מק"ט או קוד זהה).\nלהמשיך במחיקתם ולהשאיר עותק יחיד מכל אחד?`)) {
+      return;
+    }
+
+    showToast(`מתחיל מחיקת ${toDelete.length} כפילויות... קצת סבלנות.`);
+    
+    try {
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < toDelete.length; i += CHUNK_SIZE) {
+        const chunk = toDelete.slice(i, i + CHUNK_SIZE);
+        await Promise.all(chunk.map(id => deleteDoc(doc(db, 'products', id))));
+      }
+      showToast(`✓ נמחקו ${toDelete.length} פריטים כפולים בהצלחה!`);
+    } catch (err) {
+      console.error(err);
+      handleFirestoreError(err);
+    }
+  };
+
   const uniqueCategories = Array.from(new Set(products.map(p => p.category).filter(Boolean))) as string[];
   const uniqueSuppliers = Array.from(new Set(products.map(p => p.supplier).filter(Boolean))) as string[];
 
@@ -942,6 +993,9 @@ ${printHtml}
       return;
     }
 
+    let addedCount = 0;
+    let updatedCount = 0;
+
     const newProducts = importData.map((row, idx) => {
       const parsedInternalId = fieldMapping.internalId && row[fieldMapping.internalId] !== undefined ? String(row[fieldMapping.internalId] || '').trim().substring(0, 100) : '';
       const parsedSku = fieldMapping.sku && row[fieldMapping.sku] !== undefined ? String(row[fieldMapping.sku] || '').trim().substring(0, 100) : '';
@@ -951,7 +1005,14 @@ ${printHtml}
         (parsedInternalId && p.internalId === parsedInternalId)
       );
 
-      const pId = existingProduct ? existingProduct.id : Date.now().toString() + idx;
+      let pId;
+      if (existingProduct) {
+        pId = existingProduct.id;
+        row._isUpdate = true;
+      } else {
+        pId = Date.now().toString() + idx;
+        row._isNew = true;
+      }
 
       const pricesMap: Record<string, number | string> = existingProduct?.prices ? { ...existingProduct.prices } : {};
       priceLists.forEach(pl => {
@@ -962,6 +1023,7 @@ ${printHtml}
       });
       return {
       id: pId,
+      _isUpdate: !!existingProduct,
       internalId: parsedInternalId || existingProduct?.internalId || '',
       sku: parsedSku || existingProduct?.sku || '',
       desc: fieldMapping.desc && row[fieldMapping.desc] !== undefined ? String(row[fieldMapping.desc] || '').trim().substring(0, 5000) : existingProduct?.desc || '',
@@ -978,12 +1040,17 @@ ${printHtml}
     const validProducts = newProducts.filter(p => !!p.desc); // Require description ultimately (either from excel or existing)
 
     if (validProducts.length > 0) {
+      validProducts.forEach(p => {
+        if (p._isUpdate) updatedCount++;
+        else addedCount++;
+      });
+      
       try {
         for(let p of validProducts) {
-          const {id, ...rest} = p;
+          const {id, _isUpdate, ...rest} = p;
           await setDoc(doc(db, 'products', id), rest, { merge: true });
         }
-        showToast(`✓ התווספו/עודכנו ${validProducts.length} פריטים לקטלוג!`);
+        showToast(`✓ סיכום פעולת ייבוא: ${addedCount} פריטים חדשים נוספו, ${updatedCount} פריטים קיימים עודכנו (על בסיס מק"ט).`);
         setImportModalOpen(false);
         setImportData([]);
       } catch(err) {
@@ -1252,6 +1319,14 @@ ${printHtml}
                 <Upload size={14} /> שחזר מקובץ גיבוי
                 <input type="file" accept=".json" className="hidden" onChange={handleImportBackup} />
               </label>
+              
+              <button 
+                onClick={handleRemoveDuplicates} 
+                className="w-full flex items-center justify-center gap-2 bg-red-50 border border-red-300 hover:bg-red-100 text-red-700 py-1.5 px-3 rounded-md text-[12px] font-bold transition-colors mt-4"
+                title="מוחק פריטים בעלי מק''ט יצרן, פנימי או תיאור זהה ומשאיר רק עותק אחד"
+              >
+                <Trash2 size={14} /> נקה פריטים כפולים
+              </button>
             </div>
           )}
 
