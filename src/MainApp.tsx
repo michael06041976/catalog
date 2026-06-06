@@ -377,6 +377,70 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
     }
   };
 
+  const handleBulkImageImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isEditor) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    let successCount = 0;
+    let notFoundCount = 0;
+    let errorCount = 0;
+    let skippedCount = 0;
+
+    showToast(`מתחיל עיבוד ${files.length} תמונות... פעולה זו עשויה לקחת זמן, נא להמתין.`);
+    setIsUploading(true);
+
+    try {
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            if (!file.type.startsWith('image/')) continue;
+
+            const filenameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+            const extStripped = filenameWithoutExt.trim().toLowerCase();
+            
+            const matchedProduct = products.find(p => 
+                (p.sku || '').trim().toLowerCase() === extStripped || 
+                (p.internalId || '').trim().toLowerCase() === extStripped
+            );
+
+            if (matchedProduct) {
+                if (matchedProduct.img && matchedProduct.img.trim() !== '') {
+                    skippedCount++;
+                    continue;
+                }
+
+                try {
+                    const resizedImg = await new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = (re) => {
+                            const img = new Image();
+                            img.onload = () => resolve(getResizedDataUrl(img));
+                            img.onerror = reject;
+                            img.src = re.target?.result as string;
+                        };
+                        reader.onerror = reject;
+                        reader.readAsDataURL(file);
+                    });
+
+                    await setDoc(doc(db, 'products', matchedProduct.id), { img: resizedImg, updatedAt: serverTimestamp() }, { merge: true });
+                    successCount++;
+                } catch (err) {
+                    console.error("Error processing image", file.name, err);
+                    errorCount++;
+                }
+            } else {
+                notFoundCount++;
+            }
+        }
+        showToast(`סיום ייבוא תמונות.\nעודכנו: ${successCount}.\nלא נמצאו בקטלוג: ${notFoundCount}.\nדולגו (כבר קיימת תמונה): ${skippedCount}.\nשגיאות: ${errorCount}.`);
+    } catch (err) {
+        handleFirestoreError(err);
+    } finally {
+        setIsUploading(false);
+        e.target.value = ''; 
+    }
+  };
+
   const handleRemoveDuplicates = async () => {
     if (!isAdmin) { showToast('⚠️ פעולה זו מורשית למנהלים בלבד'); return; }
     
@@ -1310,6 +1374,11 @@ ${printHtml}
               <label className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 px-3 rounded-md text-[12px] font-semibold transition-colors cursor-pointer shadow-sm">
                 <FileUp size={14} /> ייבוא ועדכון פריטים/מלאי מ-Excel
                 <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleExcelImportPick} />
+              </label>
+
+              <label className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-1.5 px-3 rounded-md text-[12px] font-semibold transition-colors cursor-pointer shadow-sm mt-2" title="בחר תמונות (שם התמונה חייב להיות מק״ט). אפשר לסמן עשרות תמונות ביחד.">
+                <ImagePlus size={14} /> גיור תמונות מהיר (לפי מק״ט התמונה)
+                <input type="file" accept="image/*" multiple className="hidden" onChange={handleBulkImageImport} />
               </label>
 
               <button onClick={handleExportBackup} className="w-full flex items-center justify-center gap-2 bg-white border border-orange-300 hover:bg-orange-100 text-orange-800 py-1.5 px-3 rounded-md text-[12px] font-semibold transition-colors mt-2">
