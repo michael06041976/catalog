@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import imageCompression from 'browser-image-compression';
 import {
   LayoutGrid, Plus, Building2, Save, Download, FileSpreadsheet,
   FileText, Search, FileEdit, ImagePlus, X, Upload, Pencil, Trash2,
@@ -177,49 +178,30 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const processImageFile = (file: File, setter: (val: string) => void, setFile?: (f: File | null) => void) => {
-    if (file.size > 5000000) { showToast('⚠️ הקובץ גדול מדי (עד 5MB)'); return; }
+  const processImageFile = async (file: File, setter: (val: string) => void, setFile?: (f: File | null) => void) => {
+    if (file.size > 15 * 1024 * 1024) { showToast('⚠️ הקובץ גדול מדי (עד 15MB)'); return; }
     
     if (setFile) {
       setFile(file);
     }
 
-    const r = new FileReader();
-    r.onload = (ev) => {
-      const result = ev.target?.result as string;
-      if (!result) return;
-      
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-        const maxSize = 800; // max dimension
-        
-        if (width > height && width > maxSize) {
-          height *= maxSize / width;
-          width = maxSize;
-        } else if (height > maxSize) {
-          width *= maxSize / height;
-          height = maxSize;
-        }
-        
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-           ctx.drawImage(img, 0, 0, width, height);
-           // save quality to 0.7 for jpeg
-           // If image is png, we can just use jpeg to enforce small size
-           const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-           setter(dataUrl);
-        } else {
-           setter(result); // fallback
-        }
+    try {
+      showToast('⏳ מעבד תמונה...');
+      const options = {
+        maxSizeMB: 0.8,
+        maxWidthOrHeight: 1600,
+        useWebWorker: true,
+        fileType: 'image/jpeg',
+        initialQuality: 0.9
       };
-      img.src = result;
-    };
-    r.readAsDataURL(file);
+      
+      const compressedFile = await imageCompression(file, options);
+      const dataUrl = await imageCompression.getDataUrlFromFile(compressedFile);
+      setter(dataUrl);
+    } catch (error) {
+      console.error(error);
+      showToast('⚠️ שגיאה בהמרת התמונה');
+    }
   };
 
   const onImgPick = (e: React.ChangeEvent<HTMLInputElement>, setter: (val: string) => void, setFile?: (f: File | null) => void) => {
@@ -244,48 +226,33 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
     e.stopPropagation();
   };
 
-  const getResizedDataUrl = (img: HTMLImageElement): string => {
-    const canvas = document.createElement('canvas');
-    const MAX_WIDTH = 800;
-    const MAX_HEIGHT = 800;
-    let width = img.width;
-    let height = img.height;
-
-    if (width > height) {
-      if (width > MAX_WIDTH) {
-        height *= MAX_WIDTH / width;
-        width = MAX_WIDTH;
-      }
-    } else {
-      if (height > MAX_HEIGHT) {
-        width *= MAX_HEIGHT / height;
-        height = MAX_HEIGHT;
-      }
-    }
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    ctx?.drawImage(img, 0, 0, width, height);
-    return canvas.toDataURL('image/jpeg', 0.8);
+  const getResizedDataUrl = () => {
+     // Replaced by imageCompression
+     return '';
   };
 
-  const handleInlineImageUpload = (id: string, file: File) => {
+  const handleInlineImageUpload = async (id: string, file: File) => {
     if (!isEditor) return;
-    if (file.size > 5 * 1024 * 1024) { showToast('⚠️ התמונה גדולה מ-5MB'); return; }
-    const r = new FileReader();
-    r.onload = async (e) => {
-      const res = e.target?.result as string;
-      const img = new Image();
-      img.onload = async () => {
-        const result = getResizedDataUrl(img);
-        try {
-          await setDoc(doc(db, 'products', id), { img: result, updatedAt: serverTimestamp() }, { merge: true });
-          showToast('✓ התמונה עודכנה בהצלחה');
-        } catch (err) { handleFirestoreError(err); }
+    if (file.size > 15 * 1024 * 1024) { showToast('⚠️ התמונה גדולה מ-15MB'); return; }
+    
+    try {
+      showToast('⏳ מעלה תמונה...');
+      const options = {
+        maxSizeMB: 0.8,
+        maxWidthOrHeight: 1600,
+        useWebWorker: true,
+        fileType: 'image/jpeg',
+        initialQuality: 0.9
       };
-      img.src = res;
-    };
-    r.readAsDataURL(file);
+      const compressedFile = await imageCompression(file, options);
+      const dataUrl = await imageCompression.getDataUrlFromFile(compressedFile);
+      
+      await setDoc(doc(db, 'products', id), { img: dataUrl, updatedAt: serverTimestamp() }, { merge: true });
+      showToast('✓ התמונה עודכנה בהצלחה');
+    } catch (err) { 
+      console.error(err);
+      handleFirestoreError(err); 
+    }
   };
 
   const saveProduct = async () => {
@@ -391,6 +358,14 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
     setIsUploading(true);
 
     try {
+        const options = {
+            maxSizeMB: 0.8,
+            maxWidthOrHeight: 1600,
+            useWebWorker: true,
+            fileType: 'image/jpeg',
+            initialQuality: 0.9
+        };
+
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
             if (!file.type.startsWith('image/')) continue;
@@ -405,23 +380,13 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
 
             if (matchedProduct) {
                 if (matchedProduct.img && matchedProduct.img.trim() !== '') {
-                    skippedCount++;
-                    continue;
+                    // Do NOT skip, overwrite the image! But let's log how many we overwrite.
+                    skippedCount++; // Re-using variable for "overwritten"
                 }
 
                 try {
-                    const resizedImg = await new Promise<string>((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onload = (re) => {
-                            const img = new Image();
-                            img.onload = () => resolve(getResizedDataUrl(img));
-                            img.onerror = reject;
-                            img.src = re.target?.result as string;
-                        };
-                        reader.onerror = reject;
-                        reader.readAsDataURL(file);
-                    });
-
+                    const compressedFile = await imageCompression(file, options);
+                    const resizedImg = await imageCompression.getDataUrlFromFile(compressedFile);
                     await setDoc(doc(db, 'products', matchedProduct.id), { img: resizedImg, updatedAt: serverTimestamp() }, { merge: true });
                     successCount++;
                 } catch (err) {
@@ -432,7 +397,7 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
                 notFoundCount++;
             }
         }
-        showToast(`סיום ייבוא תמונות.\nעודכנו: ${successCount}.\nלא נמצאו בקטלוג: ${notFoundCount}.\nדולגו (כבר קיימת תמונה): ${skippedCount}.\nשגיאות: ${errorCount}.`);
+        showToast(`סיום ייבוא תמונות.\nנוצרו/עודכנו: ${successCount} (מתוכם נדרסו ${skippedCount}).\nלא נמצאו בקטלוג: ${notFoundCount}.\nשגיאות: ${errorCount}.`);
     } catch (err) {
         handleFirestoreError(err);
     } finally {
