@@ -71,6 +71,17 @@ service cloud.firestore {
           && (data.get('company', '') is string) && data.get('company', '').size() <= 200;
     }
 
+    function isValidQuote(data) {
+      return data.get('createdAt', request.time) == request.time
+          && data.get('customerName', '') is string && data.get('customerName', '').size() <= 200
+          && data.get('customerPhone', '') is string && data.get('customerPhone', '').size() <= 50
+          && data.get('customerEmail', '') is string && data.get('customerEmail', '').size() <= 200
+          && data.get('items', []) is list
+          && data.get('totalValue', 0) is number
+          && data.get('createdByEmail', '') is string && data.get('createdByEmail', '').size() <= 200
+          && data.get('dateStr', '') is string && data.get('dateStr', '').size() <= 50;
+    }
+
     // Paths
     match /products/{productId} {
       allow list: if isSignedIn(); // All authenticated users can read products
@@ -78,6 +89,12 @@ service cloud.firestore {
       allow create: if isEditorOrAdmin() && isValidId(productId) && isValidProduct(incoming()) && incoming().keys().size() <= 11;
       allow update: if isEditorOrAdmin() && isValidId(productId) && isValidProduct(incoming()) && incoming().keys().size() <= 11;
       allow delete: if isEditorOrAdmin() && isValidId(productId);
+    }
+
+    match /quotes/{quoteId} {
+      allow list, get: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(quoteId) && isValidQuote(incoming()) && incoming().keys().size() <= 10;
+      allow delete: if isSignedIn() && isValidId(quoteId);
     }
 
     match /settings/{settingId} {

@@ -4,11 +4,11 @@ import {
   LayoutGrid, Plus, Building2, Save, Download, FileSpreadsheet,
   FileText, Search, FileEdit, ImagePlus, X, Upload, Pencil, Trash2,
   PackageSearch, Check, DatabaseBackup, UploadCloud, FileUp, Shield,
-  PlayCircle, Loader2, CloudCog, CloudLightning, Menu, List, ArrowDownWideNarrow, ArrowUpNarrowWide
+  PlayCircle, Loader2, CloudCog, CloudLightning, Menu, List, ArrowDownWideNarrow, ArrowUpNarrowWide, ShoppingCart, Calculator, PlusSquare, MinusSquare, Mail
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
-import { collection, doc, onSnapshot, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, onSnapshot, setDoc, deleteDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import Admin from './Admin';
 
@@ -48,7 +48,14 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
   const [products, setProducts] = useState<Product[]>([]);
   const [company, setCompany] = useState<Company>({ name: '', hp: '', addr: '', phone: '', email: '', web: '', logo: null });
   const [priceLists, setPriceLists] = useState<PriceListDef[]>([]);
-  const [activeTab, setActiveTab] = useState<'catalog' | 'add' | 'company' | 'admin' | 'pricelists'>('catalog');
+  const [activeTab, setActiveTab] = useState<'catalog' | 'add' | 'company' | 'admin' | 'pricelists' | 'quote'>('catalog');
+  const [quoteItems, setQuoteItems] = useState<{product: Product, quantity: number}[]>([]);
+  const [quoteCustomerName, setQuoteCustomerName] = useState('');
+  const [quoteCustomerPhone, setQuoteCustomerPhone] = useState('');
+  const [quoteCustomerEmail, setQuoteCustomerEmail] = useState('');
+  const [quotesHistory, setQuotesHistory] = useState<any[]>([]);
+  const [quoteView, setQuoteView] = useState<'current' | 'history'>('current');
+
 
   // ... rest of the state
   const [search, setSearch] = useState('');
@@ -118,20 +125,40 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
       return userMenus.includes(tabId);
     }
     // Fallback logic
-    if (tabId === 'catalog') return true;
+    if (tabId === 'catalog' || tabId === 'quote') return true;
     if (tabId === 'add') return isEditor;
     if (tabId === 'company' || tabId === 'admin' || tabId === 'pricelists') return isAdmin;
     return false;
   };
 
+  const [userProfile, setUserProfile] = useState<any>(null);
+
   // Init Data from Firestore
   useEffect(() => {
+    if (auth.currentUser) {
+      getDoc(doc(db, 'users', auth.currentUser.uid)).then(d => {
+        if (d.exists()) {
+          const ud = d.data();
+          setUserProfile(ud);
+          setQuoteCustomerName(ud.company || ud.name || auth.currentUser?.displayName || '');
+          setQuoteCustomerPhone(ud.phone || '');
+          setQuoteCustomerEmail(ud.email || auth.currentUser?.email || '');
+        }
+      }).catch(err => console.error(err));
+    }
+
     const unsubProducts = onSnapshot(collection(db, 'products'), { includeMetadataChanges: true }, (snapshot) => {
       setSyncStatus(snapshot.metadata.hasPendingWrites ? 'syncing' : 'synced');
       setProducts(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Product)));
     }, err => {
       console.error("Products err", err);
       setSyncStatus('error');
+    });
+
+    const unsubQuotes = onSnapshot(collection(db, 'quotes'), (snapshot) => {
+      setQuotesHistory(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, err => {
+      console.error("Quotes err", err);
     });
 
     const unsubCompany = onSnapshot(doc(db, 'settings', 'company'), { includeMetadataChanges: true }, (d) => {
@@ -159,6 +186,7 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
 
     return () => {
       unsubProducts();
+      unsubQuotes();
       unsubCompany();
       unsubPriceLists();
     };
@@ -219,6 +247,38 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
     } else {
       if (file) showToast('⚠️ נא לגרור קובץ תמונה בלבד');
     }
+  };
+
+  const getActivePrice = (p: Product) => {
+    if (displayPriceId === 'all' || displayPriceId === 'none') {
+      return Number(p.price) || 0;
+    }
+    if (displayPriceId === 'base') return Number(p.price) || 0;
+    return Number(p.prices?.[displayPriceId] || 0);
+  };
+
+  const addToQuote = (p: Product) => {
+    setQuoteItems(curr => {
+      const existing = curr.find(it => it.product.id === p.id);
+      if (existing) {
+        return curr.map(it => it.product.id === p.id ? { ...it, quantity: it.quantity + 1 } : it);
+      }
+      showToast('✓ הפריט נוסף להצעת המחיר');
+      return [...curr, { product: p, quantity: 1 }];
+    });
+  };
+
+  const updateQuoteItemQuantity = (id: string, dir: number) => {
+    setQuoteItems(curr => curr.map(it => {
+      if (it.product.id === id) {
+        return { ...it, quantity: Math.max(1, it.quantity + dir) };
+      }
+      return it;
+    }));
+  };
+
+  const removeQuoteItem = (id: string) => {
+    setQuoteItems(curr => curr.filter(it => it.product.id !== id));
   };
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -743,7 +803,7 @@ export default function MainApp({ userRole, userMenus }: { userRole: string, use
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 @page { size: A4 portrait; margin: 0; }
-body{font-family:Arial,'David',Tahoma,sans-serif;direction:rtl;color:#1a1a2e;background:#e5e7eb;font-size:14px;}
+body{font-family:Arial,'David',Tahoma,sans-serif;direction:rtl;color:#1a1a2e;background:#e5e7eb;font-size:14px;-webkit-print-color-adjust: exact; print-color-adjust: exact;}
 .page{background:#fff;width:210mm;height:296mm;padding:9mm 9mm;margin:0 auto;position:relative;page-break-after:always;overflow:hidden;}
 .header{display:flex;justify-content:space-between;align-items:flex-start;border:1px solid #e5e7eb;padding:10px 14px;border-radius:6px;margin-bottom:12px;}
 .header-content{display:flex;align-items:center;gap:14px;}
@@ -773,7 +833,25 @@ body{font-family:Arial,'David',Tahoma,sans-serif;direction:rtl;color:#1a1a2e;bac
 <body>
 ${printHtml}
 <button class="print-btn" onclick="window.print()">🖨️ הדפס / שמור כ-PDF</button>
-<script>setTimeout(()=>window.print(),600);</script>
+  <script>
+    window.onload = function() {
+      var images = document.getElementsByTagName('img');
+      var loaded = 0;
+      var total = images.length;
+      if (total === 0) { setTimeout(()=>window.print(),800); return; }
+      for (var i = 0; i < total; i++) {
+        if (images[i].complete) {
+          loaded++;
+        } else {
+          images[i].addEventListener('load', function() { loaded++; if (loaded === total) setTimeout(()=>window.print(), 800); });
+          images[i].addEventListener('error', function() { loaded++; if (loaded === total) setTimeout(()=>window.print(), 800); });
+        }
+      }
+      if (loaded === total) {
+        setTimeout(()=>window.print(),800);
+      }
+    };
+  </script>
 </body></html>`;
 
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
@@ -783,6 +861,201 @@ ${printHtml}
     a.target = '_blank';
     a.click();
     showToast('✓ הקטלוג נפתח בכרטיסייה חדשה');
+  };
+
+  const saveQuote = async () => {
+    if (quoteItems.length === 0) return;
+    const qData = {
+      customerName: quoteCustomerName,
+      customerPhone: quoteCustomerPhone,
+      customerEmail: quoteCustomerEmail,
+      items: quoteItems.map(it => ({
+        productId: it.product.id,
+        desc: it.product.desc,
+        sku: it.product.sku,
+        img: it.product.img,
+        quantity: it.quantity
+      })),
+      totalValue: 0,
+      createdByEmail: auth.currentUser?.email || 'אורח',
+      createdAt: serverTimestamp(),
+      dateStr: new Date().toLocaleDateString('he-IL')
+    };
+
+    try {
+      await setDoc(doc(db, 'quotes', Date.now().toString()), qData);
+      showToast('✓ הצעה נשמרה בהצלחה במערכת');
+    } catch (err) {
+      console.error(err);
+      handleFirestoreError(err);
+    }
+  };
+
+  const deleteQuote = async (qid: string) => {
+    if (!window.confirm('האם אתה בטוח שברצונך למחוק הצעה זו מניהול ההצעות?')) return;
+    try {
+      await deleteDoc(doc(db, 'quotes', qid));
+      showToast('✓ הצעה נמחקה');
+    } catch (err) {
+      console.error(err);
+      handleFirestoreError(err);
+    }
+  };
+
+  const loadQuote = (q: any) => {
+    setQuoteCustomerName(q.customerName || '');
+    setQuoteCustomerPhone(q.customerPhone || '');
+    setQuoteCustomerEmail(q.customerEmail || '');
+    setQuoteItems((q.items || []).map((it: any) => ({
+      product: {
+        id: it.productId || '',
+        sku: it.sku || '',
+        desc: it.desc || '',
+        img: it.img || null,
+        supplier: '',
+        created: ''
+      } as Product,
+      quantity: it.quantity || 1
+    })));
+    setQuoteView('current');
+    showToast('✓ הצעת מחיר נטענה בהצלחה');
+  };
+
+  const exportQuotePDF = () => {
+    if (quoteItems.length === 0) { showToast('⚠️ אין פריטים להצעה'); return; }
+    
+    const tableRows = quoteItems.map((item, i) => {
+      return `
+        <tr>
+          <td class="index">${i + 1}</td>
+          <td style="text-align:center;">${item.product.img ? `<img src="${item.product.img}" style="width:40px;height:40px;object-fit:contain;border-radius:4px;">` : '-'}</td>
+          <td>${item.product.sku || '-'}</td>
+          <td>${item.product.desc}</td>
+          <td class="num" style="text-align:center;">${item.quantity}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const username = auth.currentUser?.email || 'אורח';
+    const dateObj = new Date();
+    const dateStr = dateObj.toLocaleDateString('he-IL');
+    const timeStr = dateObj.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+    
+    const html = `<!DOCTYPE html><html dir="rtl" lang="he"><head><meta charset="UTF-8"><title>הצעת מחיר</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+@page { size: A4 portrait; margin: 0; }
+body{font-family:Arial,'David',Tahoma,sans-serif;direction:rtl;color:#1a1a2e;background:#fff;font-size:14px;-webkit-print-color-adjust: exact; print-color-adjust: exact;}
+.doc-container{width:210mm;height:297mm;margin:0 auto;padding:20mm 15mm;background:#fff;position:relative;}
+.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e5e7eb;padding-bottom:14px;margin-bottom:20px;}
+.header-content{display:flex;align-items:center;gap:14px;}
+.logo{max-width:120px;max-height:80px;object-fit:contain;}
+.co-name{font-size:20px;font-weight:700}
+.co-info{font-size:13px;opacity:.8;margin-top:4px}
+.quote-title{font-size:24px;font-weight:900;text-align:center;margin-bottom:20px;letter-spacing:1px;}
+.table{width:100%;border-collapse:collapse;margin-bottom:20px;table-layout:fixed;}
+.table th, .table td {border:1px solid #d1d5db;padding:10px 8px;font-size:13px;text-align:right;}
+.table th {background:#fefefe;font-weight:bold;color:#4b5563;}
+.table th.index, .table td.index {width:35px;text-align:center;}
+.table th.num, .table td.num {text-align:left;white-space:nowrap;width:120px;}
+.table .font-bold {font-weight:bold;color:#111827;}
+.total-row td {font-size:16px;font-weight:900;background:#f9fafb;border-top:2px solid #ccc;}
+.footer-text{font-size:12px;color:#6b7280;margin-top:40px;text-align:center;border-top:1px solid #eee;padding-top:15px;}
+.print-btn{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:11px 26px;background:#1e1e2f;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer;font-family:inherit;box-shadow:0 4px 16px rgba(0,0,0,.2);z-index:999;}
+@media print{
+  body{background:#fff;}
+  .doc-container{margin:0;width:100%;height:100vh;}
+  .print-btn{display:none}
+}
+</style></head>
+<body>
+  <div class="doc-container">
+    <div class="header">
+      <div class="header-content">
+        ${company.logo ? `<img src="${company.logo}" class="logo">` : ''}
+        <div>
+          <div class="co-name">${company.name || 'חברה'}</div>
+          <div class="co-info">${[company.hp ? 'ח.פ: ' + company.hp : '', company.phone, company.email].filter(Boolean).join(' | ')}</div>
+        </div>
+      </div>
+      <div style="text-align:left;font-size:13px;color:#4b5563;">
+        <div>תאריך: <strong>${dateStr}</strong></div>
+        <div style="margin-top:4px">הופק ע"י: <strong>${username}</strong></div>
+      </div>
+    </div>
+    <div class="quote-title">הצעת מחיר</div>
+
+    ${quoteCustomerName || quoteCustomerPhone || quoteCustomerEmail ? `
+    <div style="margin-bottom:20px;padding:15px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;">
+      <div style="font-weight:bold;margin-bottom:8px;font-size:15px;">לכבוד:</div>
+      ${quoteCustomerName ? `<div>שם / חברה: <strong>${quoteCustomerName}</strong></div>` : ''}
+      ${quoteCustomerPhone ? `<div style="margin-top:4px;">טלפון: ${quoteCustomerPhone}</div>` : ''}
+      ${quoteCustomerEmail ? `<div style="margin-top:4px;">אימייל: ${quoteCustomerEmail}</div>` : ''}
+    </div>
+    ` : ''}
+    
+    <table class="table">
+      <thead>
+        <tr>
+          <th class="index">#</th>
+          <th style="width:50px;text-align:center;">תמונה</th>
+          <th style="width:80px">מק"ט</th>
+          <th>תיאור פריט</th>
+          <th class="num" style="width:50px;text-align:center;">כמות</th>
+        </tr>
+      </thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+    
+    <div class="footer-text">
+        הצעת מחיר זו תקפה ל-14 ימים. ט.ל.ח.
+    </div>
+  </div>
+  <button class="print-btn" onclick="window.print()">🖨️ הדפס / שמור כ-PDF</button>
+  <script>
+    window.onload = function() {
+      var images = document.getElementsByTagName('img');
+      var loaded = 0;
+      var total = images.length;
+      if (total === 0) { setTimeout(()=>window.print(),800); return; }
+      for (var i = 0; i < total; i++) {
+        if (images[i].complete) {
+          loaded++;
+        } else {
+          images[i].addEventListener('load', function() { loaded++; if (loaded === total) setTimeout(()=>window.print(), 800); });
+          images[i].addEventListener('error', function() { loaded++; if (loaded === total) setTimeout(()=>window.print(), 800); });
+        }
+      }
+      if (loaded === total) {
+        setTimeout(()=>window.print(),800);
+      }
+    };
+  </script>
+</body></html>`;
+
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.click();
+    showToast('✓ הצעת המחיר מוכנה!');
+  };
+
+  const sendQuoteByEmail = () => {
+    if (quoteItems.length === 0) { showToast('⚠️ אין פריטים להצעה'); return; }
+    
+    const emailLines = quoteItems.map((item, i) => {
+      return `${i + 1}. ${item.product.desc} (מק"ט: ${item.product.sku || '-'}) - כמות: ${item.quantity}`;
+    });
+
+    const body = `שלום${quoteCustomerName ? ' ' + quoteCustomerName : ' רב'},\n\nהצעת מחיר מטעם ${company.name || 'החברה'}:\n\n` +
+      emailLines.join('\n') +
+      `\n\n${quoteCustomerPhone ? 'פרטי תקשורת לקוח: ' + quoteCustomerPhone + '\n\n' : ''}בברכה,\n${company.name || ''}`;
+
+    const subject = 'הצעת מחיר - ' + (company.name || 'קטלוג מוצרים');
+    const mailto = `mailto:${quoteCustomerEmail || ''}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = mailto;
   };
 
   // --- JSON Backup / Restore ---
@@ -1163,6 +1436,20 @@ ${printHtml}
               <Plus size={16} /> <span className="hidden sm:inline">הוסף / ערוך</span>
             </button>
           )}
+          {canSeeTab('quote') && (
+            <button
+              onClick={() => setActiveTab('quote')}
+              className={`px-2 md:px-3 py-1.5 rounded-md text-xs md:text-sm font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${activeTab === 'quote' ? 'bg-rose-500 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'} relative`}
+            >
+              <ShoppingCart size={16} />
+              <span className="hidden sm:inline">הצעת מחיר</span>
+              {quoteItems.length > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold w-4 h-4 flex items-center justify-center rounded-full">
+                  {quoteItems.length}
+                </span>
+              )}
+            </button>
+          )}
           {canSeeTab('company') && (
             <button
               onClick={() => setActiveTab('company')}
@@ -1455,6 +1742,13 @@ ${printHtml}
                         </div>
                       ))}
                     </div>
+                    {canSeeTab('quote') && (
+                      <div className="bg-slate-50 p-2 border-t border-slate-100 flex justify-end">
+                        <button onClick={() => addToQuote(p)} className="flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 px-2.5 py-1.5 rounded transition-colors" title="הוסף להצעת מחיר">
+                          <ShoppingCart size={14} /> הוסף להצעה
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))
               ) : (
@@ -1490,7 +1784,7 @@ ${printHtml}
                       {priceLists.filter(pl => displayPriceId === 'all' || displayPriceId === pl.id).map(pl => (
                         <th key={pl.id} className="px-4 py-3 font-semibold">{pl.name}</th>
                       ))}
-                      {isEditor && <th className="px-4 py-3 font-semibold text-center">פעולות</th>}
+                      {(isEditor || canSeeTab('quote')) && <th className="px-4 py-3 font-semibold text-center">פעולות</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1521,15 +1815,24 @@ ${printHtml}
                         {priceLists.filter(pl => displayPriceId === 'all' || displayPriceId === pl.id).map(pl => (
                            <td key={pl.id} className="px-4 py-3 text-slate-600">{(p.prices && p.prices[pl.id]) || '—'} ₪</td>
                         ))}
-                        {isEditor && (
+                        {(isEditor || canSeeTab('quote')) && (
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => startEdit(p.id)} className="w-8 h-8 rounded-md bg-white text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 border border-slate-200 flex items-center justify-center transition-colors shadow-sm">
-                                <Pencil size={14} />
-                              </button>
-                              <button onClick={() => promptDeleteProduct(p.id)} className="w-8 h-8 rounded-md bg-white text-red-600 hover:text-red-800 hover:bg-red-50 border border-slate-200 flex items-center justify-center transition-colors shadow-sm">
-                                <Trash2 size={14} />
-                              </button>
+                              {canSeeTab('quote') && (
+                                <button onClick={() => addToQuote(p)} className="w-8 h-8 rounded-md bg-white text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 border border-slate-200 flex items-center justify-center transition-colors shadow-sm" title="הוסף להצעת מחיר">
+                                  <ShoppingCart size={14} />
+                                </button>
+                              )}
+                              {isEditor && (
+                                <>
+                                  <button onClick={() => startEdit(p.id)} className="w-8 h-8 rounded-md bg-white text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 border border-slate-200 flex items-center justify-center transition-colors shadow-sm" title="ערוך">
+                                    <Pencil size={14} />
+                                  </button>
+                                  <button onClick={() => promptDeleteProduct(p.id)} className="w-8 h-8 rounded-md bg-white text-red-600 hover:text-red-800 hover:bg-red-50 border border-slate-200 flex items-center justify-center transition-colors shadow-sm" title="מחק">
+                                    <Trash2 size={14} />
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </td>
                         )}
@@ -1629,6 +1932,142 @@ ${printHtml}
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* QUOTE TAB */}
+          {activeTab === 'quote' && canSeeTab('quote') && (
+            <div className="max-w-[760px] mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-6 mb-8">
+              <div className="flex items-center justify-between mb-6">
+                <div className="text-sm font-bold text-slate-500 uppercase flex items-center gap-2">
+                  <Calculator size={18}/> {quoteView === 'current' ? 'הצעת מחיר נוכחית' : 'ניהול הצעות היסטוריות'}
+                </div>
+                <div className="bg-slate-100 p-1 rounded-lg flex items-center gap-1">
+                  <button onClick={() => setQuoteView('current')} className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${quoteView === 'current' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>הצעה נוכחית</button>
+                  <button onClick={() => setQuoteView('history')} className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${quoteView === 'history' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>היסטוריה</button>
+                </div>
+              </div>
+
+              {quoteView === 'current' ? (
+              <>
+              <div className="flex items-center justify-between mb-4 pb-4 border-b border-slate-100">
+                <div className="text-sm font-bold text-slate-800">פריטים בהצעה ({quoteItems.length})</div>
+                <div className="flex items-center gap-2">
+                  <button onClick={saveQuote} disabled={quoteItems.length === 0} className="bg-emerald-600 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-emerald-700 transition flex items-center gap-1.5 disabled:opacity-50">
+                     <Save size={16}/> שמור למערכת
+                  </button>
+                  <button onClick={sendQuoteByEmail} disabled={quoteItems.length === 0} className="bg-indigo-600 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-indigo-700 transition flex items-center gap-1.5 disabled:opacity-50">
+                     <Mail size={16}/> שליחה במייל
+                  </button>
+                  <button onClick={exportQuotePDF} disabled={quoteItems.length === 0} className="bg-slate-800 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-slate-700 transition flex items-center gap-1.5 disabled:opacity-50">
+                     <FileText size={16}/> הפק PDF
+                  </button>
+                </div>
+              </div>
+              
+              {quoteItems.length === 0 ? (
+                <div className="text-center p-12 text-slate-400">
+                  <ShoppingCart size={48} className="mx-auto mb-3 opacity-30 stroke-[1]"/>
+                  <h3 className="text-lg font-medium">הצעת המחיר ריקה</h3>
+                  <p className="text-sm mt-1">עבור לקטלוג ולחץ על "הוסף להצעה" לפריטים הרצויים</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-6">
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                     <div>
+                       <label className="block text-xs font-bold text-slate-500 mb-1">שם לקוח / חברה</label>
+                       <input type="text" value={quoteCustomerName} onChange={e => setQuoteCustomerName(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-md bg-white text-sm outline-none focus:border-indigo-400" placeholder="למשל: ישראל ישראלי" />
+                     </div>
+                     <div>
+                       <label className="block text-xs font-bold text-slate-500 mb-1">טלפון</label>
+                       <input type="tel" value={quoteCustomerPhone} onChange={e => setQuoteCustomerPhone(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-md bg-white text-sm outline-none focus:border-indigo-400" placeholder="050-1234567" />
+                     </div>
+                     <div>
+                       <label className="block text-xs font-bold text-slate-500 mb-1">אימייל</label>
+                       <input type="email" value={quoteCustomerEmail} onChange={e => setQuoteCustomerEmail(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-md bg-white text-sm outline-none focus:border-indigo-400" placeholder="email@example.com" />
+                     </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                  <table className="w-full text-right text-sm">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                      <tr>
+                        <th className="px-3 py-3 font-semibold">תמונה</th>
+                        <th className="px-3 py-3 font-semibold">תיאור ומק"ט</th>
+                        <th className="px-3 py-3 font-semibold">כמות</th>
+                        <th className="px-3 py-3 text-center w-12">הסר</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {quoteItems.map((it) => (
+                        <tr key={it.product.id} className="hover:bg-slate-50">
+                          <td className="px-3 py-3">
+                             {it.product.img ? <img src={it.product.img} className="w-12 h-12 object-contain rounded border border-slate-200 bg-white"/> : <div className="w-12 h-12 rounded border border-slate-200 bg-slate-50 flex items-center justify-center"><ImagePlus size={20} className="text-slate-300"/></div>}
+                          </td>
+                          <td className="px-3 py-3">
+                            <div className="font-bold text-slate-800">{it.product.desc}</div>
+                            <div className="text-xs text-slate-500 mt-0.5">פנימי: {it.product.internalId} | תע"א: {it.product.sku}</div>
+                          </td>
+                          <td className="px-3 py-3">
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => updateQuoteItemQuantity(it.product.id, -1)} className="text-slate-400 hover:text-indigo-600 transition-colors p-1"><MinusSquare size={18}/></button>
+                              <span className="font-bold w-6 text-center text-slate-700">{it.quantity}</span>
+                              <button onClick={() => updateQuoteItemQuantity(it.product.id, 1)} className="text-slate-400 hover:text-indigo-600 transition-colors p-1"><PlusSquare size={18}/></button>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 text-center">
+                            <button onClick={() => removeQuoteItem(it.product.id)} className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-md transition-colors" title="הסר">
+                              <Trash2 size={16}/>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                </div>
+              )}
+              </>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  {quotesHistory.length === 0 ? (
+                     <div className="text-center p-12 text-slate-400">
+                       <FileText size={48} className="mx-auto mb-3 opacity-30 stroke-[1]"/>
+                       <h3 className="text-lg font-medium">אין הצעות היסטוריות</h3>
+                     </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4">
+                      {quotesHistory.sort((a,b) => b.id.localeCompare(a.id)).map(q => (
+                        <div key={q.id} className="border border-slate-200 rounded-lg p-4 bg-white hover:border-indigo-200 transition-colors">
+                          <div className="flex justify-between items-start mb-3">
+                            <div>
+                              <div className="font-bold text-slate-800">{q.customerName || 'לקוח ללא שם'}</div>
+                              <div className="text-xs text-slate-500 mt-1 flex items-center gap-3">
+                                <span>📞 {q.customerPhone || '-'}</span>
+                                <span>📧 {q.customerEmail || '-'}</span>
+                                <span>🗓 {q.dateStr || ''}</span>
+                              </div>
+                            </div>
+                            <div className="text-left flex flex-col items-end">
+                              <div className="flex items-center gap-2 mt-1">
+                                <div className="text-[10px] text-slate-400">{(q.items || []).length} פריטים | הופק ע"י: {q.createdByEmail}</div>
+                                <button onClick={() => loadQuote(q)} className="text-indigo-600 hover:text-indigo-800 p-1 transition-colors" title="טען למסך נוכחי">
+                                  <FileEdit size={14}/>
+                                </button>
+                                <button onClick={() => deleteQuote(q.id)} className="text-slate-400 hover:text-red-500 p-1 transition-colors" title="מחק הצעה">
+                                  <Trash2 size={14}/>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="bg-slate-50 rounded p-2 text-xs text-slate-600">
+                             {(q.items || []).map((it:any) => it.desc).join(' • ')}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

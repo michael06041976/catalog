@@ -88,7 +88,8 @@ export default function App() {
                   role: 'viewer',
                   status: 'pending',
                   createdAt: serverTimestamp(),
-                  menus: ['catalog']
+                  menus: ['catalog'],
+                  company: user.displayName || ''
                 });
              } catch (err: any) {
                 console.error("Could not create pending user", err);

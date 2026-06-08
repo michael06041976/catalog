@@ -11,6 +11,7 @@ interface AdminProps {
 const MENU_OPTIONS = [
   { id: 'catalog', label: 'קטלוג (צפייה)' },
   { id: 'add', label: 'הוספת/עריכת פריטים' },
+  { id: 'quote', label: 'הצעת מחיר' },
   { id: 'company', label: 'הגדרות חברה' },
   { id: 'pricelists', label: 'ניהול מחירונים' },
   { id: 'admin', label: 'ניהול מערכת' }
@@ -169,7 +170,7 @@ export default function Admin({ onNavigateToCompany }: AdminProps) {
             />
             <input 
               type="text" 
-              placeholder="שם חברה" 
+              placeholder="שם מלא / חברה" 
               value={newUserCompany} 
               onChange={e => setNewUserCompany(e.target.value)}
               className="flex-1 px-3 py-2 border border-slate-200 rounded-md text-[13px] outline-none"
